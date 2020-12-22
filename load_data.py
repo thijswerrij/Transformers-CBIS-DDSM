@@ -8,6 +8,8 @@ Created on Tue Dec 22 16:37:56 2020
 import matplotlib.pyplot as plt
 from pydicom import dcmread
 import os
+import numpy as np
+import cv2
 
 #fpath = get_testdata_file()
 #ds = dcmread("1-1.dcm")
@@ -23,11 +25,11 @@ def list_paths(dir, file_type=None):
         if (i%1000==0):
             print(str(i) + "/" + str(length) + " files passed")
         for name in files:
-            if (not file_type or name[-3:] == file_type):
+            if (not file_type or name.endswith(file_type)):
                 r.append(os.path.join(root, name))
     return r
 
-def display_data(ds):
+def display_data(ds, plot=True):
     # https://pydicom.github.io/pydicom/stable/auto_examples/input_output/plot_read_dicom.html
     
     # Normal mode:
@@ -46,12 +48,20 @@ def display_data(ds):
     # use .get() if not sure the item exists, and want a default value if missing
     print(f"Slice location...: {ds.get('SliceLocation', '(missing)')}")
     
-    # plot the image using matplotlib
-    plt.imshow(ds.pixel_array, cmap=plt.cm.gray)
+    if (plot):
+        # plot the image using matplotlib
+        plt.imshow(ds.pixel_array, cmap=plt.cm.gray)
+        plt.show()
+        
+def plot(img):
+    plt.imshow(img, cmap=plt.cm.gray)
     plt.show()
 
 def get_dcm(dir):
     return list_paths(dir, "dcm")
+
+def to_image(img_array):
+    return PIL.Image.fromarray(img_array)
 
 folder_path = "CBIS-DDSM"
 #folder_path = "D:\CBIS-DDSM"
@@ -63,7 +73,12 @@ length = len(path_list)
 for path in path_list:
     i+=1
     ds = dcmread(path)
-    #display_data(ds)
-    image_list.append(ds)
+    img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
+    plot(img)
+    image_list.append(img)
+    img = cv2.resize(ds.pixel_array, (0, 0), fx=0.5, fy=0.5,
+                           interpolation=cv2.INTER_CUBIC)
+    plot(img)
+    image_list.append(img)
     if (i%100==0):
         print(str(i) + "/" + str(length) + " files added")
