@@ -8,25 +8,31 @@ Created on Tue Dec 22 16:37:56 2020
 import matplotlib.pyplot as plt
 from pydicom import dcmread
 import os
-import numpy as np
+#import numpy as np
 import cv2
+import PIL
+
+from tqdm import tqdm
 
 #fpath = get_testdata_file()
 #ds = dcmread("1-1.dcm")
 
-def list_paths(dir, file_type=None):
+def list_paths(dir, file_type=None, limit=None):
     r = []
     file_gen = os.walk(dir)
     length = len(list(file_gen))+1
-    i = 0
+    i = 1
     
     for root, dirs, files in os.walk(dir):
-        i+=1
         if (i%1000==0):
             print(str(i) + "/" + str(length) + " files passed")
         for name in files:
             if (not file_type or name.endswith(file_type)):
                 r.append(os.path.join(root, name))
+                i+=1
+        if limit and i>limit:
+            break
+    #print(str(len(r)) + " files read")
     return r
 
 def display_data(ds, plot=True):
@@ -49,36 +55,37 @@ def display_data(ds, plot=True):
     print(f"Slice location...: {ds.get('SliceLocation', '(missing)')}")
     
     if (plot):
-        # plot the image using matplotlib
-        plt.imshow(ds.pixel_array, cmap=plt.cm.gray)
-        plt.show()
+        plot(ds.pixel_array)
         
 def plot(img):
+    # plot the image using matplotlib
     plt.imshow(img, cmap=plt.cm.gray)
     plt.show()
 
-def get_dcm(dir):
-    return list_paths(dir, "dcm")
+def get_dcm(dir, limit=None):
+    return list_paths(dir, "dcm", limit)
 
 def to_image(img_array):
     return PIL.Image.fromarray(img_array)
 
-folder_path = "CBIS-DDSM"
-#folder_path = "D:\CBIS-DDSM"
-path_list = get_dcm(folder_path)
-image_list = []
+def resize_image(img, width, height, scale=1):
+    if scale != 1:
+        return cv2.resize(img, (0, 0), fx=scale, fy=scale, 
+                          interpolation=cv2.INTER_CUBIC)
+    return cv2.resize(img, (width, height), interpolation=cv2.INTER_CUBIC)
 
-i = 0
-length = len(path_list)
-for path in path_list:
-    i+=1
-    ds = dcmread(path)
-    img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
-    plot(img)
-    image_list.append(img)
-    img = cv2.resize(ds.pixel_array, (0, 0), fx=0.5, fy=0.5,
-                           interpolation=cv2.INTER_CUBIC)
-    plot(img)
-    image_list.append(img)
-    if (i%100==0):
-        print(str(i) + "/" + str(length) + " files added")
+def get_images_and_resize(path_list, width, height):
+    image_list = []
+    
+    for path in tqdm(path_list):
+        ds = dcmread(path)
+        #img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
+        img = resize_image(ds.pixel_array, width, height)
+        image_list.append(img)
+    return image_list
+
+folder_path = "CBIS-DDSM"
+folder_path = "D:\CBIS-DDSM"
+
+path_list = get_dcm(folder_path, limit=200)
+images = get_images_and_resize(path_list, 180, 180)
