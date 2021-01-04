@@ -8,32 +8,46 @@ Created on Tue Dec 22 16:37:56 2020
 import matplotlib.pyplot as plt
 from pydicom import dcmread
 import os
-#import numpy as np
+import numpy as np
 import cv2
 import PIL
+import pandas as pd
 
 from tqdm import tqdm
 
 #fpath = get_testdata_file()
 #ds = dcmread("1-1.dcm")
 
-def list_paths(dir, file_type=None, limit=None):
-    r = []
-    file_gen = os.walk(dir)
-    length = len(list(file_gen))+1
-    i = 1
+csv_path = "data/"
+images_path = "D:\\CBIS-DDSM\\"
+
+def read_csv(path, sample=None):
+    data = pd.read_csv(csv_path + path)
     
-    for root, dirs, files in os.walk(dir):
-        if (i%1000==0):
-            print(str(i) + "/" + str(length) + " files passed")
-        for name in files:
-            if (not file_type or name.endswith(file_type)):
-                r.append(os.path.join(root, name))
-                i+=1
-        if limit and i>limit:
-            break
-    #print(str(len(r)) + " files read")
-    return r
+    img_paths = data[['image file path','cropped image file path','ROI mask file path']].values
+    
+    if sample and sample>0:
+        img_paths = img_paths[:sample]
+        
+    for i in range(img_paths.shape[0]):
+        path1 = images_path + img_paths[i,0].split('/')[0]
+        path2 = images_path + img_paths[i,1].split('/')[0]
+        
+        for root, _, files in os.walk(path1):
+            if len(files)>0 and files[0].endswith("1-1.dcm"):
+                img_paths[i,0] = os.path.join(root, files[0])
+                break
+        for root, folders, files in os.walk(path2):
+            for file in files:
+                if file.endswith("1-1.dcm"):
+                    img_paths[i,1] = os.path.join(root, file)
+                elif file.endswith("1-2.dcm"):
+                    img_paths[i,2] = os.path.join(root, file)
+                    
+    return img_paths
+
+def get_image(path):
+    return dcmread(path)
 
 def display_data(ds, plot=True):
     # https://pydicom.github.io/pydicom/stable/auto_examples/input_output/plot_read_dicom.html
@@ -61,9 +75,14 @@ def plot(img):
     # plot the image using matplotlib
     plt.imshow(img, cmap=plt.cm.gray)
     plt.show()
-
-def get_dcm(dir, limit=None):
-    return list_paths(dir, "dcm", limit)
+    
+def plot_multiple(images, size=None):
+    size = min(len(images),10,size)
+    fig, axs = plt.subplots(size, 3)
+    for i in range(size):
+        for j in range(3):
+            axs[i,j].imshow(images[i][j], cmap=plt.cm.gray)
+            
 
 def to_image(img_array):
     return PIL.Image.fromarray(img_array)
@@ -74,18 +93,22 @@ def resize_image(img, width, height, scale=1):
                           interpolation=cv2.INTER_CUBIC)
     return cv2.resize(img, (width, height), interpolation=cv2.INTER_CUBIC)
 
-def get_images_and_resize(path_list, width, height):
+def get_images_and_resize(path_list, width, height, plot=False):
     image_list = []
     
-    for path in tqdm(path_list):
-        ds = dcmread(path)
-        #img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
-        img = resize_image(ds.pixel_array, width, height)
-        image_list.append(img)
+    for paths in tqdm(path_list):
+        row = []
+        for path in paths:
+            #ds = get_image(images_path + path)
+            ds = get_image(path)
+            #img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
+            img = resize_image(ds.pixel_array, width, height)
+            row.append(img)
+        image_list.append(row)
+        
     return image_list
 
-folder_path = "CBIS-DDSM"
-folder_path = "D:\CBIS-DDSM"
+path_list = read_csv("calc_case_description_train_set.csv", sample=10)
+images = get_images_and_resize(path_list, 180, 180, True)
 
-path_list = get_dcm(folder_path, limit=200)
-images = get_images_and_resize(path_list, 180, 180)
+plot_multiple(images, size=3)
