@@ -12,6 +12,8 @@ import numpy as np
 import cv2
 import PIL
 import pandas as pd
+import csv
+import h5py
 
 from tqdm import tqdm
 
@@ -19,32 +21,20 @@ from tqdm import tqdm
 #ds = dcmread("1-1.dcm")
 
 csv_path = "data/"
-images_path = "D:\\CBIS-DDSM\\"
+h5_path = "data/"
+images_path = "D:/CBIS-DDSM/"
 
 def read_csv(path, sample=None):
     data = pd.read_csv(csv_path + path)
     
     img_paths = data[['image file path','cropped image file path','ROI mask file path']].values
     
+    labels = data['pathology'].values
+    
     if sample and sample>0:
-        img_paths = img_paths[:sample]
-        
-    for i in range(img_paths.shape[0]):
-        path1 = images_path + img_paths[i,0].split('/')[0]
-        path2 = images_path + img_paths[i,1].split('/')[0]
-        
-        for root, _, files in os.walk(path1):
-            if len(files)>0 and files[0].endswith("1-1.dcm"):
-                img_paths[i,0] = os.path.join(root, files[0])
-                break
-        for root, folders, files in os.walk(path2):
-            for file in files:
-                if file.endswith("1-1.dcm"):
-                    img_paths[i,1] = os.path.join(root, file)
-                elif file.endswith("1-2.dcm"):
-                    img_paths[i,2] = os.path.join(root, file)
+        img_paths, labels = img_paths[:sample], labels[:sample]
                     
-    return img_paths
+    return img_paths, labels
 
 def get_image(path):
     return dcmread(path)
@@ -100,15 +90,32 @@ def get_images_and_resize(path_list, width, height, plot=False):
         row = []
         for path in paths:
             #ds = get_image(images_path + path)
-            ds = get_image(path)
+            ds = get_image(os.path.join(images_path, path.strip()))
             #img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
             img = resize_image(ds.pixel_array, width, height)
             row.append(img)
         image_list.append(row)
         
+    image_list = np.asarray(image_list)
+    
     return image_list
 
-path_list = read_csv("calc_case_description_train_set.csv", sample=10)
+file_name = "calc_case_description_test_set"
+
+path_list, labels = read_csv(f"{file_name}.csv")#, sample=50)
 images = get_images_and_resize(path_list, 180, 180, True)
 
-plot_multiple(images, size=3)
+plot_multiple(images[:], size=3)
+
+
+# Save images
+h5out = h5py.File(f"{h5_path}{file_name}.h5", 'w')
+saved_images = images[:,0]
+
+dataset = h5out.create_dataset(
+    "images", np.shape(saved_images), h5py.h5t.STD_U8BE, data=saved_images
+)
+meta_set = h5out.create_dataset(
+    "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
+)
+h5out.close()

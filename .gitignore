@@ -1,1 +1,2 @@
-*.dcm
+__pycache__
+*.pt
