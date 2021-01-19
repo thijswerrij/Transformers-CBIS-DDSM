@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Oct 16 11:37:52 2020
-
-@author: Thijs Werrij
+Custom version of ResViT to train on CBIS-DDSM
 """
 import PIL
 import time
@@ -13,14 +11,20 @@ from einops import rearrange
 from torch import nn
 import torch.nn.init as init
 
+from load_data import plot
+
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
 from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = "cpu"
 
 #%% Presets
 
-BATCH_SIZE_TRAIN = 100
-BATCH_SIZE_TEST = 100
+BATCH_SIZE_TRAIN = 10
+BATCH_SIZE_TEST = 10
 
 #%% Load hdf5
 
@@ -59,7 +63,13 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         self.images, labels = read_hdf5(file_name)
-        self.labels = np.array([label_to_int[i[0]] for i in labels])
+        
+        # very ugly, should fix later
+        data_size = int(len(labels)/100)*100
+        self.images, labels = self.images[:data_size], labels[:data_size]
+        
+        print(self.images.shape, labels.shape)
+        self.labels = np.array([label_to_int[i[0]] for i in labels]).astype('float')
         self.transform = transform
 
     def __len__(self):
@@ -67,17 +77,26 @@ class CBISDataset(Dataset):
 
     def __getitem__(self, i):
         image = self.images[i].astype('float')
-        label = self.labels[i]#np.array([self.labels[i]])
+        label = self.labels[i].astype('float')#np.array([self.labels[i]])
         
         if self.transform:
             image = self.transform(PIL.Image.fromarray(image))
-            image = PIL.Image.totensor(image)
+            #image = PIL.Image.totensor(image)
         
         sample = (image, label)
 
         return sample
 
-transform = None
+
+transform = torchvision.transforms.Compose(
+     [torchvision.transforms.ToTensor(),
+     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+     #torchvision.transforms.Normalize((0.5), (0.5))
+     torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)),
+     #torchvision.transforms.Normalize((0.5), (0.5))
+     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+     ])
+#transform = torchvision.transforms.ToTensor()
 
 '''
 # CIFAR10: 60000 32x32 color images in 10 classes, with 6000 images per class
@@ -86,11 +105,10 @@ transform = torchvision.transforms.Compose(
      torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
      torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
      torchvision.transforms.ToTensor(),
-     torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
-'''
+     torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])'''
     
-train_dataset = CBISDataset("calc_case_description_train_set", transform)
-test_dataset = CBISDataset("calc_case_description_test_set", transform)
+train_dataset = CBISDataset("calc_case_description_train_set_180", transform)
+test_dataset = CBISDataset("calc_case_description_test_set_180", transform)
 
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
@@ -103,9 +121,9 @@ def train(model, optimizer, data_loader, loss_history):
     model.train()
 
     for i, (data, target) in enumerate(data_loader):
-        print(type(data), type(target))
+        #print(data.dtype, target.dtype)
         
-        data, target = data.to(device), target.to(device)
+        data, target = data.to(device), target.to(device, dtype=torch.int64)
         optimizer.zero_grad()
         output = F.log_softmax(model(data), dim=1)
         loss = F.nll_loss(output, target)
@@ -127,7 +145,7 @@ def evaluate(model, data_loader, loss_history):
 
     with torch.no_grad():
         for data, target in data_loader:
-            data, target = data.to(device), target.to(device)
+            data, target = data.to(device), target.to(device, dtype=torch.int64)
             output = F.log_softmax(model(data), dim=1)
             loss = F.nll_loss(output, target, reduction='sum')
             _, pred = torch.max(output, dim=1)
@@ -142,10 +160,10 @@ def evaluate(model, data_loader, loss_history):
           '{:5}'.format(total_samples) + ' (' +
           '{:4.2f}'.format(100.0 * correct_samples / total_samples) + '%)\n')
 
-N_EPOCHS = 2#50
+N_EPOCHS = 10#50
 
 
-model = ViTResNet(BasicBlock, [3, 3, 3]).to(device)
+model = ViTResNet(BasicBlock, [3, 3, 3], num_classes=3, batch_size=(BATCH_SIZE_TRAIN,BATCH_SIZE_TEST)).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
 
 #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)

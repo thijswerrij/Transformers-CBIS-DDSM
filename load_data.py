@@ -100,22 +100,26 @@ def get_images_and_resize(path_list, width, height, plot=False):
     
     return image_list
 
-file_name = "calc_case_description_test_set"
 
-path_list, labels = read_csv(f"{file_name}.csv")#, sample=50)
-images = get_images_and_resize(path_list, 180, 180, True)
-
-plot_multiple(images[:], size=3)
-
-
-# Save images
-h5out = h5py.File(f"{h5_path}{file_name}.h5", 'w')
-saved_images = images[:,0]
-
-dataset = h5out.create_dataset(
-    "images", np.shape(saved_images), h5py.h5t.STD_U8BE, data=saved_images
-)
-meta_set = h5out.create_dataset(
-    "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
-)
-h5out.close()
+if __name__ == "__main__":
+    file_name = "calc_case_description_test_set"
+    img_size = 32
+    
+    #path_list, labels = read_csv(f"{file_name}.csv", sample=10)
+    path_list, labels = read_csv(f"{file_name}.csv")
+    images = get_images_and_resize(path_list, img_size, img_size, True)
+    
+    plot_multiple(images[:], size=3)
+    
+    
+    # Save images
+    h5out = h5py.File(f"{h5_path}{file_name}_{img_size}.h5", 'w')
+    saved_images = images[:,0]
+    
+    dataset = h5out.create_dataset(
+        "images", np.shape(saved_images), h5py.h5t.STD_U8BE, data=saved_images
+    )
+    meta_set = h5out.create_dataset(
+        "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
+    )
+    h5out.close()
