@@ -19,11 +19,6 @@ from ResViT import ViTResNet, BasicBlock, train, evaluate
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #device = "cpu"
 
-#%% Presets
-
-BATCH_SIZE_TRAIN = 10
-BATCH_SIZE_TEST = 10
-
 #%% Load hdf5
 
 import h5py
@@ -43,16 +38,13 @@ def read_hdf5(file_name):
 
 from torch.utils.data import Dataset, DataLoader
 
-label_to_int = {
-    'BENIGN': 0,
-    'BENIGN_WITHOUT_CALLBACK': 1,
-    'MALIGNANT' : 2
-}
+label_to_int = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 1, 'MALIGNANT' : 2 }
+label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 
 class CBISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, file_name, transform=None):
+    def __init__(self, file_name, transform=None, batch_size=None, binary=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -62,12 +54,15 @@ class CBISDataset(Dataset):
         """
         self.images, labels = read_hdf5(file_name)
         
-        # very ugly, should fix later
-        data_size = int(len(labels)/100)*100
-        self.images, labels = self.images[:data_size], labels[:data_size]
+        if batch_size:
+            data_size = int(len(labels)/batch_size)*batch_size
+            self.images, labels = self.images[:data_size], labels[:data_size]
         
-        print(self.images.shape, labels.shape)
-        self.labels = np.array([label_to_int[i[0]] for i in labels]).astype('float')
+        #(self.images.shape, labels.shape)
+        if binary:
+            self.labels = np.array([label_to_bin[i[0]] for i in labels]).astype('float')
+        else:
+            self.labels = np.array([label_to_int[i[0]] for i in labels]).astype('float')
         self.transform = transform
 
     def __len__(self):
@@ -87,37 +82,29 @@ class CBISDataset(Dataset):
 
 
 transform = torchvision.transforms.Compose(
-     [torchvision.transforms.ToTensor(),
-     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-     #torchvision.transforms.Normalize((0.5), (0.5))
-     torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)),
-     #torchvision.transforms.Normalize((0.5), (0.5))
-     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-     ])
-#transform = torchvision.transforms.ToTensor()
-
-'''
-# CIFAR10: 60000 32x32 color images in 10 classes, with 6000 images per class
-transform = torchvision.transforms.Compose(
      [torchvision.transforms.RandomHorizontalFlip(),
      torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
      torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
      torchvision.transforms.ToTensor(),
-     torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])'''
-    
-train_dataset = CBISDataset("calc_case_description_train_set_180", transform)
-test_dataset = CBISDataset("calc_case_description_test_set_180", transform)
+     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+     torchvision.transforms.Normalize((0.5), (0.5))
+     ])
+
+#%%
+
+BATCH_SIZE_TRAIN = 50
+BATCH_SIZE_TEST = 50
+batch_size = (BATCH_SIZE_TRAIN, BATCH_SIZE_TEST)
+
+train_dataset = CBISDataset("calc_case_description_train_set_180", transform, BATCH_SIZE_TRAIN)
+test_dataset = CBISDataset("calc_case_description_test_set_180", transform, BATCH_SIZE_TEST)
 
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
 
-
-#%%
-
 N_EPOCHS = 10#50
 
-
-model = ViTResNet(BasicBlock, [3, 3, 3], num_classes=3, batch_size=(BATCH_SIZE_TRAIN,BATCH_SIZE_TEST)).to(device)
+model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=3, batch_size=batch_size).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
 
 #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
