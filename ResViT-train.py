@@ -6,6 +6,7 @@ import PIL
 import time
 import torch
 import torchvision
+import torch.nn.functional as F
 
 from load_data import plot
 
@@ -14,7 +15,7 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 import sys
 sys.path.append('../VisualTransformers')
-from ResViT import ViTResNet, BasicBlock, train, evaluate
+from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #device = "cpu"
@@ -58,11 +59,10 @@ class CBISDataset(Dataset):
             data_size = int(len(labels)/batch_size)*batch_size
             self.images, labels = self.images[:data_size], labels[:data_size]
         
-        #(self.images.shape, labels.shape)
         if binary:
-            self.labels = np.array([label_to_bin[i[0]] for i in labels]).astype('float')
+            self.labels = np.array([label_to_bin[i[0]] for i in labels])
         else:
-            self.labels = np.array([label_to_int[i[0]] for i in labels]).astype('float')
+            self.labels = np.array([label_to_int[i[0]] for i in labels])
         self.transform = transform
 
     def __len__(self):
@@ -70,11 +70,10 @@ class CBISDataset(Dataset):
 
     def __getitem__(self, i):
         image = self.images[i].astype('float')
-        label = self.labels[i].astype('float')#np.array([self.labels[i]])
+        label = np.array(self.labels[i])
         
         if self.transform:
             image = self.transform(PIL.Image.fromarray(image))
-            #image = PIL.Image.totensor(image)
         
         sample = (image, label)
 
@@ -92,19 +91,64 @@ transform = torchvision.transforms.Compose(
 
 #%%
 
+def train(model, optimizer, data_loader, loss_history):
+    total_samples = len(data_loader.dataset)
+    model.train()
+
+    for i, (data, target) in enumerate(data_loader):
+        data, target = data.to(device), target.to(device, dtype=torch.int64)
+        optimizer.zero_grad()
+        output = F.log_softmax(model(data), dim=1)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+
+        if i % 100 == 0:
+            print('[' +  '{:5}'.format(i * len(data)) + '/' + '{:5}'.format(total_samples) +
+                  ' (' + '{:3.0f}'.format(100 * i / len(data_loader)) + '%)]  Loss: ' +
+                  '{:6.4f}'.format(loss.item()))
+            loss_history.append(loss.item())
+            
+def evaluate(model, data_loader, loss_history):
+    model.eval()
+    
+    total_samples = len(data_loader.dataset)
+    correct_samples = 0
+    total_loss = 0
+
+    with torch.no_grad():
+        for data, target in data_loader:
+            data, target = data.to(device), target.to(device, dtype=torch.int64)
+            output = F.log_softmax(model(data), dim=1)
+            loss = F.nll_loss(output, target, reduction='sum')
+            _, pred = torch.max(output, dim=1)
+            
+            total_loss += loss.item()
+            correct_samples += pred.eq(target).sum()
+
+    avg_loss = total_loss / total_samples
+    loss_history.append(avg_loss)
+    print('\nAverage test loss: ' + '{:.4f}'.format(avg_loss) +
+          '  Accuracy:' + '{:5}'.format(correct_samples) + '/' +
+          '{:5}'.format(total_samples) + ' (' +
+          '{:4.2f}'.format(100.0 * correct_samples / total_samples) + '%)\n')
+
+#%%
+
 BATCH_SIZE_TRAIN = 50
 BATCH_SIZE_TEST = 50
 batch_size = (BATCH_SIZE_TRAIN, BATCH_SIZE_TEST)
+is_binary = True
 
-train_dataset = CBISDataset("calc_case_description_train_set_180", transform, BATCH_SIZE_TRAIN)
-test_dataset = CBISDataset("calc_case_description_test_set_180", transform, BATCH_SIZE_TEST)
+train_dataset = CBISDataset("calc_case_description_train_set_180", transform, BATCH_SIZE_TRAIN, is_binary)
+test_dataset = CBISDataset("calc_case_description_test_set_180", transform, BATCH_SIZE_TEST, is_binary)
 
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
 
-N_EPOCHS = 10#50
+N_EPOCHS = 5
 
-model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=3, batch_size=batch_size).to(device)
+model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=2 if is_binary else 3, batch_size=batch_size).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
 
 #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -122,7 +166,7 @@ for epoch in range(1, N_EPOCHS + 1):
 minutes, seconds = divmod(time.time() - init_time, 60)
 print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
 
-PATH = ".\ViTRes.pt" # Use your own path
+PATH = "./ViTRes.pt" # Use your own path
 torch.save(model.state_dict(), PATH)
 
 
