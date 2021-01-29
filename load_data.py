@@ -17,12 +17,18 @@ import h5py
 
 from tqdm import tqdm
 
+import sys
+sys.path.append('../breast_cancer_classifier')
+from src.cropping.crop_mammogram import crop_img_from_largest_connected, image_orientation
+
 #fpath = get_testdata_file()
 #ds = dcmread("1-1.dcm")
 
 csv_path = "data/"
 h5_path = "data/"
 images_path = "D:/CBIS-DDSM/"
+
+#%%
 
 def read_csv(path, sample=None):
     data = pd.read_csv(csv_path + path)
@@ -83,17 +89,41 @@ def resize_image(img, width, height, scale=1):
                           interpolation=cv2.INTER_CUBIC)
     return cv2.resize(img, (width, height), interpolation=cv2.INTER_CUBIC)
 
-def get_images_and_resize(path_list, width, height, plot=False):
+def get_direction(ds):
+    try:
+        if ds.Laterality in ["L","R"]:
+            return ds.Laterality
+    except:
+        if ds.BodyPartExamined[0] in ["L","R"]:
+            return ds.BodyPartExamined[0]
+    return None
+
+def get_images_and_resize(path_list, width, height, crop=False, show_plot=False, include_files=[True,True,True]):
     image_list = []
     
     for paths in tqdm(path_list):
         row = []
-        for path in paths:
-            #ds = get_image(images_path + path)
-            ds = get_image(os.path.join(images_path, path.strip()))
-            #img = cv2.GaussianBlur(ds.pixel_array, (0, 0), 1, 1)
-            img = resize_image(ds.pixel_array, width, height)
-            row.append(img)
+        bp = None
+        
+        for i in range(3):
+            if include_files[i]:
+                path = paths[i]
+                ds = get_image(os.path.join(images_path, path.strip()))
+                
+                pixel_array = ds.pixel_array
+                
+                if (i == 0):
+                    bp = get_direction(ds)
+                
+                if crop:
+                    cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
+                    y_min, y_max, x_min, x_max = cropped[0]
+                    pixel_array = pixel_array[y_min:y_max,x_min:x_max]
+                
+                #img = cv2.GaussianBlur(pixel_array, (0, 0), 1, 1)
+                img = resize_image(pixel_array, width, height)
+                
+                row.append(img)
         image_list.append(row)
         
     image_list = np.asarray(image_list)
@@ -102,22 +132,27 @@ def get_images_and_resize(path_list, width, height, plot=False):
 
 
 if __name__ == "__main__":
+    to_crop = True
     file_name = "calc_case_description_test_set"
-    img_size = 32
+    img_size = 180
     
-    #path_list, labels = read_csv(f"{file_name}.csv", sample=10)
+    #path_list, labels = read_csv(f"{file_name}.csv", sample=100)
     path_list, labels = read_csv(f"{file_name}.csv")
-    images = get_images_and_resize(path_list, img_size, img_size, True)
+    images = get_images_and_resize(path_list, img_size, img_size, crop=True, show_plot=True, include_files=[True,False,False])
     
-    plot_multiple(images[:], size=3)
+    #plot_multiple(images[:], size=3)
     
     
     # Save images
-    h5out = h5py.File(f"{h5_path}{file_name}_{img_size}.h5", 'w')
+    if to_crop:
+        h5out = h5py.File(f"{h5_path}{file_name}_{img_size}_cropped.h5", 'w')
+    else:
+        h5out = h5py.File(f"{h5_path}{file_name}_{img_size}.h5", 'w')
+    
     saved_images = images[:,0]
     
     dataset = h5out.create_dataset(
-        "images", np.shape(saved_images), h5py.h5t.STD_U8BE, data=saved_images
+        "images", np.shape(saved_images), data=saved_images
     )
     meta_set = h5out.create_dataset(
         "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)

@@ -30,7 +30,7 @@ h5_path = "data/"
 def read_hdf5(file_name):
     file = h5py.File(f"{h5_path}{file_name}.h5", "r+")
 
-    images = np.array(file["/images"]).astype("uint8")
+    images = np.array(file["/images"]).astype("uint16")
     labels = np.array(file["/meta"]).astype("str")
 
     return images, labels
@@ -74,16 +74,18 @@ class CBISDataset(Dataset):
         
         if self.transform:
             image = self.transform(PIL.Image.fromarray(image))
+        else:
+            image = torchvision.transforms.ToTensor()(PIL.Image.fromarray(image))
         
         sample = (image, label)
 
         return sample
 
 
-transform = torchvision.transforms.Compose(
-     [torchvision.transforms.RandomHorizontalFlip(),
-     torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-     torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+transform = torchvision.transforms.Compose([
+     #torchvision.transforms.RandomHorizontalFlip(),
+     #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+     #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
      torchvision.transforms.ToTensor(),
      #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
      torchvision.transforms.Normalize((0.5), (0.5))
@@ -140,8 +142,9 @@ BATCH_SIZE_TEST = 50
 batch_size = (BATCH_SIZE_TRAIN, BATCH_SIZE_TEST)
 is_binary = True
 
-train_dataset = CBISDataset("calc_case_description_train_set_180", transform, BATCH_SIZE_TRAIN, is_binary)
-test_dataset = CBISDataset("calc_case_description_test_set_180", transform, BATCH_SIZE_TEST, is_binary)
+file_params = "180_cropped"
+train_dataset = CBISDataset(f"calc_case_description_train_set_{file_params}", transform, BATCH_SIZE_TRAIN, is_binary)
+test_dataset = CBISDataset(f"calc_case_description_test_set_{file_params}", transform, BATCH_SIZE_TEST, is_binary)
 
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
