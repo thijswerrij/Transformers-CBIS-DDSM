@@ -16,6 +16,7 @@ import csv
 import h5py
 
 from tqdm import tqdm
+from time import sleep
 
 import sys
 sys.path.append('../breast_cancer_classifier')
@@ -83,11 +84,29 @@ def plot_multiple(images, size=None):
 def to_image(img_array):
     return PIL.Image.fromarray(img_array)
 
-def resize_image(img, width, height, scale=1):
+def resize_image(img, max_size=0, height=0, width=0, scale=1, keep_ratio=True):
+    h, w = img.shape
+    #plot(img)
     if scale != 1:
         return cv2.resize(img, (0, 0), fx=scale, fy=scale, 
                           interpolation=cv2.INTER_CUBIC)
-    return cv2.resize(img, (width, height), interpolation=cv2.INTER_CUBIC)
+    elif height>0 and width>0:
+        return cv2.resize(img, (int(width), int(height)), interpolation=cv2.INTER_CUBIC)
+    elif max_size>0 and (h>max_size or w>max_size):
+        if keep_ratio:
+            if h>w:
+                w = int(w/(h/max_size))
+                h = max_size
+            elif h==w:
+                h, w = max_size, max_size
+            else:
+                h = int(h/(w/max_size))
+                w = max_size
+        else:
+            h, w = max_size, max_size
+        return cv2.resize(img, (w, h), interpolation=cv2.INTER_CUBIC)
+    print("Image not resized")
+    return img
 
 def get_direction(ds):
     try:
@@ -98,35 +117,90 @@ def get_direction(ds):
             return ds.BodyPartExamined[0]
     return None
 
-def get_images_and_resize(path_list, width, height, crop=False, show_plot=False, include_files=[True,True,True]):
-    image_list = []
+# Credits to Gijs van Tulder
+def compute_patch_offset(centroid, patch_size, image_size):
+    centroid = int(np.floor(centroid))
+    offset = max(0, centroid - patch_size // 2)
+    offset = min(offset, image_size - patch_size)
+    return offset
+
+def get_equal_crops(img, crop, patch_size):
+    #plot(img)
+    y_min, y_max, x_min, x_max = crop[0]
     
-    for paths in tqdm(path_list):
-        row = []
-        bp = None
+    y_centroid, x_centroid = y_min+int(np.floor(patch_size[0]/2)), x_min+int(np.floor(patch_size[1]/2))
+    
+    offsets = [compute_patch_offset(y_centroid, patch_size[0], img.shape[0]),
+               compute_patch_offset(x_centroid, patch_size[1], img.shape[1])]
         
-        for i in range(3):
-            if include_files[i]:
-                path = paths[i]
+    if patch_size[0] > img.shape[0] or patch_size[1] > img.shape[1]:
+        pad_width = ((max(0, patch_size[0] - img.shape[0]), 0),
+                         (max(0, patch_size[1] - img.shape[1]), 0))
+        offsets = [max(0, offsets[0]), max(0, offsets[1])]
+        img = np.pad(img, pad_width, constant_values=np.min(img))
+        
+    patch = img[offsets[0]:offsets[0] + patch_size[0], offsets[1]:offsets[1] + patch_size[1]]
+    
+    return patch
+
+def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, show_plot=False, include_files=[True,True,True]):
+    image_list = [[],[],[]]
+    crops = []
+    
+    size_is_tuple, size_is_int = type(img_size) is tuple, type(img_size) is int
+    
+    if crop:
+        print("Loading images and computing crops...\n")
+        sleep(0.2)
+        for paths in tqdm(path_list):
+            if include_files[0]:
+                path = paths[0]
                 ds = get_image(os.path.join(images_path, path.strip()))
                 
                 pixel_array = ds.pixel_array
                 
-                if (i == 0):
-                    bp = get_direction(ds)
+                bp = get_direction(ds)
                 
-                if crop:
-                    cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
-                    y_min, y_max, x_min, x_max = cropped[0]
-                    pixel_array = pixel_array[y_min:y_max,x_min:x_max]
+                cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
+                y_min, y_max, x_min, x_max = cropped[0]
+                crops.append((cropped[0], (y_max-y_min,x_max-x_min)))
+        y_max_val = max([y for (_, (y,_)) in crops])
+        x_max_val = max([x for (_, (_,x)) in crops])
+        print("\nMax values:", y_max_val, x_max_val)
+    
+    print("Cropping and saving images...\n")
+    sleep(0.3)
+    
+    for p in tqdm(range(len(path_list))):
+        for i in range(3):
+            if include_files[i]:
+                path = path_list[p][i]
+                ds = get_image(os.path.join(images_path, path.strip()))
+                
+                pixel_array = ds.pixel_array
+                h, w = pixel_array.shape
+                
+                if crop and (i==0 or i==1):
+                    cropped = get_equal_crops(pixel_array, crops[p], [y_max_val, x_max_val])
+                    
+                    #y_min, y_max, x_min, x_max = cropped
+                    
+                    #pixel_array = pixel_array[:,x_min:x_max]
+                    pixel_array = cropped
+                    #plot(pixel_array)
                 
                 #img = cv2.GaussianBlur(pixel_array, (0, 0), 1, 1)
-                img = resize_image(pixel_array, width, height)
+                #print(pixel_array.shape)
+                if img_scale != 1:
+                    img = resize_image(pixel_array, scale=img_scale)
+                elif size_is_tuple:
+                    img = resize_image(pixel_array, width=img_size[0], height=img_size[1])
+                elif size_is_int:
+                    img = resize_image(pixel_array, img_size, keep_ratio=True)
                 
-                row.append(img)
-        image_list.append(row)
-        
-    image_list = np.asarray(image_list)
+                #plot(img)
+                
+                image_list[i].append(img)
     
     return image_list
 
@@ -134,27 +208,37 @@ def get_images_and_resize(path_list, width, height, crop=False, show_plot=False,
 if __name__ == "__main__":
     to_crop = True
     file_name = "calc_case_description_test_set"
-    img_size = 180
+    img_scale = 0.1
+    img_size = None
+    #img_size = (180,180)
+    save = True
     
-    #path_list, labels = read_csv(f"{file_name}.csv", sample=100)
-    path_list, labels = read_csv(f"{file_name}.csv")
-    images = get_images_and_resize(path_list, img_size, img_size, crop=True, show_plot=True, include_files=[True,False,False])
+    path_list, labels = read_csv(f"{file_name}.csv", sample=10)
+    #path_list, labels = read_csv(f"{file_name}.csv")
+    images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crop=to_crop, include_files=[True,False,False])
     
     #plot_multiple(images[:], size=3)
     
+    saved_images = np.array(images[0])
+    
+    if img_scale != 1:
+        str_img_size = f"scaled_{img_scale}"
+    elif type(img_size) is tuple:
+        str_img_size = f"{img_size[0]}x{img_size[1]}"
+    elif type(img_size) is int:
+        str_img_size = str(img_size)
     
     # Save images
-    if to_crop:
-        h5out = h5py.File(f"{h5_path}{file_name}_{img_size}_cropped.h5", 'w')
-    else:
-        h5out = h5py.File(f"{h5_path}{file_name}_{img_size}.h5", 'w')
-    
-    saved_images = images[:,0]
-    
-    dataset = h5out.create_dataset(
-        "images", np.shape(saved_images), data=saved_images
-    )
-    meta_set = h5out.create_dataset(
-        "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
-    )
-    h5out.close()
+    if save:
+        if to_crop:
+            h5_filename = f"{h5_path}{file_name}_{str_img_size}_cropped.h5"
+        else:
+            h5_filename = f"{h5_path}{file_name}_{str_img_size}.h5"
+        
+        with h5py.File(h5_filename,'w') as f:
+            dataset = f.create_dataset(
+                "images", saved_images.shape, data=saved_images.astype('float16'), compression='gzip'
+            )
+            meta_set = f.create_dataset(
+                "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
+            )

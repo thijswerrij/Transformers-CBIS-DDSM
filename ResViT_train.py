@@ -45,7 +45,7 @@ label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 class CBISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, file_name, transform=None, batch_size=None, binary=False):
+    def __init__(self, file_name, transform=None, batch_size=None, binary=False, sample=None):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -55,6 +55,8 @@ class CBISDataset(Dataset):
         """
         self.images, labels = read_hdf5(file_name)
         
+        if sample:
+            self.images, labels = self.images[:sample], labels[:sample]
         if batch_size:
             data_size = int(len(labels)/batch_size)*batch_size
             self.images, labels = self.images[:data_size], labels[:data_size]
@@ -137,40 +139,54 @@ def evaluate(model, data_loader, loss_history):
 
 #%%
 
-BATCH_SIZE_TRAIN = 50
-BATCH_SIZE_TEST = 50
-batch_size = (BATCH_SIZE_TRAIN, BATCH_SIZE_TEST)
-is_binary = True
+if __name__ == "__main__":
 
-file_params = "180_cropped"
-train_dataset = CBISDataset(f"calc_case_description_train_set_{file_params}", transform, BATCH_SIZE_TRAIN, is_binary)
-test_dataset = CBISDataset(f"calc_case_description_test_set_{file_params}", transform, BATCH_SIZE_TEST, is_binary)
-
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
-
-N_EPOCHS = 5
-
-model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=2 if is_binary else 3, batch_size=batch_size).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
-
-#optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
-#lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
-
-init_time = time.time()
-train_loss_history, test_loss_history = [], []
-for epoch in range(1, N_EPOCHS + 1):
-    print('Epoch:', epoch)
-    start_time = time.time()
-    train(model, optimizer, train_loader, train_loss_history)
-    print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-    evaluate(model, test_loader, test_loss_history)
+    BATCH_SIZE_TRAIN = 5
+    BATCH_SIZE_TEST = 5
+    batch_size = (BATCH_SIZE_TRAIN, BATCH_SIZE_TEST)
+    is_binary = True
     
-minutes, seconds = divmod(time.time() - init_time, 60)
-print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
+    #file_params = "180_cropped"
+    #file_params = "400x1000_cropped"
+    file_params = "scaled_0.1_cropped"
+    train_dataset = CBISDataset(f"calc_case_description_train_set_{file_params}", transform, BATCH_SIZE_TRAIN, is_binary)
+    test_dataset = CBISDataset(f"calc_case_description_test_set_{file_params}", transform, BATCH_SIZE_TEST, is_binary)
+    
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
+    
+    N_EPOCHS = 5
+    
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=2 if is_binary else 3, batch_size=batch_size).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
+    
+    #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
+    #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
+    
+    init_time = time.time()
+    train_loss_history, test_loss_history = [], []
+    for epoch in range(1, N_EPOCHS + 1):
+        print('Epoch:', epoch)
+        start_time = time.time()
+        train(model, optimizer, train_loader, train_loss_history)
+        print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
+        evaluate(model, test_loader, test_loss_history)
+        
+    minutes, seconds = divmod(time.time() - init_time, 60)
+    print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
+    
+    PATH = "./ViTRes.pt" # Use your own path
+    torch.save(model.state_dict(), PATH)
+    
+#%%
 
-PATH = "./ViTRes.pt" # Use your own path
-torch.save(model.state_dict(), PATH)
+import matplotlib.pyplot as plt
+
+avg_train_loss_history = np.mean(np.array(train_loss_history).reshape(N_EPOCHS,-1), axis=1)
+
+plt.plot(avg_train_loss_history)
+plt.plot(test_loss_history, 'r')
+plt.show()
 
 
 # =============================================================================
