@@ -164,8 +164,8 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, sho
                 cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
                 y_min, y_max, x_min, x_max = cropped[0]
                 crops.append((cropped[0], (y_max-y_min,x_max-x_min)))
-        y_max_val = max([y for (_, (y,_)) in crops])
-        x_max_val = max([x for (_, (_,x)) in crops])
+        y_max_val = int(np.percentile([y for (_, (y,_)) in crops], 90))
+        x_max_val = int(np.percentile([x for (_, (_,x)) in crops], 90))
         print("\nMax values:", y_max_val, x_max_val)
     
     print("Cropping and saving images...\n")
@@ -207,14 +207,14 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, sho
 
 if __name__ == "__main__":
     to_crop = True
-    file_name = "calc_case_description_test_set"
+    file_name = "calc_case_description_train_set"
     img_scale = 0.1
     img_size = None
     #img_size = (180,180)
     save = True
     
-    path_list, labels = read_csv(f"{file_name}.csv", sample=10)
-    #path_list, labels = read_csv(f"{file_name}.csv")
+    #path_list, labels = read_csv(f"{file_name}.csv", sample=10)
+    path_list, labels = read_csv(f"{file_name}.csv")
     images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crop=to_crop, include_files=[True,False,False])
     
     #plot_multiple(images[:], size=3)
