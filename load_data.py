@@ -124,6 +124,28 @@ def compute_patch_offset(centroid, patch_size, image_size):
     offset = min(offset, image_size - patch_size)
     return offset
 
+def get_crops(path_list):
+    crops = []
+    
+    print("Loading images and computing crops...\n")
+    sleep(0.2)
+    for paths in tqdm(path_list):
+        path = paths[0]
+        ds = get_image(os.path.join(images_path, path.strip()))
+        
+        pixel_array = ds.pixel_array
+        
+        bp = get_direction(ds)
+        
+        cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
+        y_min, y_max, x_min, x_max = cropped[0]
+        crops.append((cropped[0], (y_max-y_min,x_max-x_min)))
+    y_max_val = int(np.percentile([y for (_, (y,_)) in crops], 90))
+    x_max_val = int(np.percentile([x for (_, (_,x)) in crops], 90))
+    print("\nMax values:", y_max_val, x_max_val)
+    
+    return crops, y_max_val, x_max_val
+
 def get_equal_crops(img, crop, patch_size):
     #plot(img)
     y_min, y_max, x_min, x_max = crop[0]
@@ -143,30 +165,11 @@ def get_equal_crops(img, crop, patch_size):
     
     return patch
 
-def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, show_plot=False, include_files=[True,True,True]):
+def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, crop_size=False, show_plot=False, include_files=[True,True,True]):
     image_list = [[],[],[]]
-    crops = []
     
     size_is_tuple, size_is_int = type(img_size) is tuple, type(img_size) is int
-    
-    if crop:
-        print("Loading images and computing crops...\n")
-        sleep(0.2)
-        for paths in tqdm(path_list):
-            if include_files[0]:
-                path = paths[0]
-                ds = get_image(os.path.join(images_path, path.strip()))
-                
-                pixel_array = ds.pixel_array
-                
-                bp = get_direction(ds)
-                
-                cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
-                y_min, y_max, x_min, x_max = cropped[0]
-                crops.append((cropped[0], (y_max-y_min,x_max-x_min)))
-        y_max_val = int(np.percentile([y for (_, (y,_)) in crops], 90))
-        x_max_val = int(np.percentile([x for (_, (_,x)) in crops], 90))
-        print("\nMax values:", y_max_val, x_max_val)
+    crop_size_is_tuple = type(crop_size) is tuple
     
     print("Cropping and saving images...\n")
     sleep(0.3)
@@ -180,8 +183,12 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, sho
                 pixel_array = ds.pixel_array
                 h, w = pixel_array.shape
                 
-                if crop and (i==0 or i==1):
-                    cropped = get_equal_crops(pixel_array, crops[p], [y_max_val, x_max_val])
+                if crops and (i==0 or i==1):
+                    if crop_size_is_tuple and not img_size:
+                        cropped = get_equal_crops(pixel_array, crops[p], crop_size)
+                    else:
+                        y_min, y_max, x_min, x_max = crops[p][0]
+                        cropped = pixel_array[y_min:y_max,x_min:x_max]
                     
                     #y_min, y_max, x_min, x_max = cropped
                     
@@ -204,22 +211,37 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crop=False, sho
     
     return image_list
 
+#%%
 
 if __name__ == "__main__":
     to_crop = True
-    file_name = "calc_case_description_train_set"
-    img_scale = 0.1
-    img_size = None
-    #img_size = (180,180)
-    save = True
+    #file_name = "calc_case_description_train_set"
+    file_name = "mass_case_description_train_set"
     
     #path_list, labels = read_csv(f"{file_name}.csv", sample=10)
     path_list, labels = read_csv(f"{file_name}.csv")
-    images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crop=to_crop, include_files=[True,False,False])
+    
+    if to_crop:
+        crops, y_max, x_max = get_crops(path_list)
+        
+    #%%
+    
+    img_scale = 1
+    img_scale = 0.2
+    img_size = None
+    #img_size = (180,180)
+    include_files=[True,False,False]
+    
+    if to_crop:
+        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crops=crops, crop_size=(y_max,x_max), include_files=include_files)
+    else:
+        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, include_files=include_files)
     
     #plot_multiple(images[:], size=3)
     
     saved_images = np.array(images[0])
+    
+    #%%
     
     if img_scale != 1:
         str_img_size = f"scaled_{img_scale}"
@@ -229,16 +251,15 @@ if __name__ == "__main__":
         str_img_size = str(img_size)
     
     # Save images
-    if save:
-        if to_crop:
-            h5_filename = f"{h5_path}{file_name}_{str_img_size}_cropped.h5"
-        else:
-            h5_filename = f"{h5_path}{file_name}_{str_img_size}.h5"
-        
-        with h5py.File(h5_filename,'w') as f:
-            dataset = f.create_dataset(
-                "images", saved_images.shape, data=saved_images.astype('float16'), compression='gzip'
-            )
-            meta_set = f.create_dataset(
-                "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
-            )
+    if to_crop:
+        h5_filename = f"{h5_path}{file_name}_{str_img_size}_cropped.h5"
+    else:
+        h5_filename = f"{h5_path}{file_name}_{str_img_size}.h5"
+    
+    with h5py.File(h5_filename,'w') as f:
+        dataset = f.create_dataset(
+            "images", saved_images.shape, data=saved_images.astype('float16'), compression='gzip'
+        )
+        meta_set = f.create_dataset(
+            "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
+        )
