@@ -9,8 +9,6 @@ import torchvision
 import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 
-from load_data import plot
-
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -132,6 +130,8 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
     correct_samples = 0
     total_loss = 0
     conf_mat = 0
+    
+    predicted_labels = [0,1] if binary else [0,1,2]
 
     with torch.no_grad():
         for data, target in data_loader:
@@ -142,11 +142,7 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
             
             total_loss += loss.item()
             correct_samples += pred.eq(target).sum().item()
-            
-            if not binary:
-                conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=[0,1,2]))
-            else:
-                conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=[0,1]))
+            conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
 
     avg_loss = total_loss / total_samples
     accuracy = correct_samples / total_samples
@@ -163,21 +159,22 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
 
 if __name__ == "__main__":
 
-    batch_size = (10, 10)
+    batch_size = (4, 4)
     is_binary = False
     
     #file_params = "180_cropped"
     #file_params = "400x1000_cropped"
-    file_params = "scaled_0.1_cropped"
+    file_params = "scaled_0.2_cropped"
     train_dataset = CBISDataset(f"calc_case_description_train_set_{file_params}", transform, batch_size[0], is_binary)
     test_dataset = CBISDataset(f"calc_case_description_test_set_{file_params}", transform, batch_size[1], is_binary)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
-    N_EPOCHS = 5
+    N_EPOCHS = 50
+    categories = 2 if is_binary else 3
     
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=2 if is_binary else 3, batch_size=batch_size).to(device)
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -202,27 +199,59 @@ if __name__ == "__main__":
     PATH = "./ViTRes.pt" # Use your own path
     torch.save(model.state_dict(), PATH)
     
-#%%
+#%% Loss & accuracy plots
 
-import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
+    
+    def plot(img):
+        # plot the image using matplotlib
+        plt.imshow(img, cmap=plt.cm.gray)
+        plt.show()
+    
+    #avg_train_loss_history = np.mean(np.array(train_loss_history).reshape(N_EPOCHS,-1), axis=1)
+    
+    #plt.gca().set_ylim([0,None])
+    
+    plt.figure()
+    plt.plot(train_loss_history, label="train")
+    plt.plot(test_loss_history, 'r', label="eval")
+    plt.legend(loc="upper right")
+    plt.suptitle('Transformer loss')
+    plt.show()
+    
+    plt.plot(train_acc_history, label="train")
+    plt.plot(test_acc_history, 'r', label="eval")
+    plt.legend(loc="upper left")
+    plt.suptitle('Transformer accuracy')
+    plt.show()
 
-#avg_train_loss_history = np.mean(np.array(train_loss_history).reshape(N_EPOCHS,-1), axis=1)
+#%% ROC curve
+    
+    from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay
 
-#plt.gca().set_ylim([0,None])
-
-plt.figure()
-plt.plot(train_loss_history, label="train")
-plt.plot(test_loss_history, 'r', label="eval")
-plt.legend(loc="upper right")
-plt.suptitle('Tranformer loss')
-plt.show()
-
-plt.plot(train_acc_history, label="train")
-plt.plot(test_acc_history, 'r', label="eval")
-plt.legend(loc="upper left")
-plt.suptitle('Transformer accuracy')
-plt.show()
-
+    model.eval()
+    probabilities = np.array([]).reshape(0,categories)
+    labels = np.array([])
+    
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device, dtype=torch.int64)
+            probs = model(data).cpu().numpy()
+            probabilities = np.concatenate((probabilities,probs))
+            labels = np.concatenate((labels,target.cpu().numpy()))
+    
+    #%%
+    auc = []
+    
+    loop = range(1,2) if categories==2 else range(categories)
+    for i in loop:
+        i_probs = probabilities[:,i]
+        i_labels = (labels == i)
+        fpr, tpr, _ = roc_curve(i_labels,i_probs)
+        RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
+        plt.suptitle('ROC curve for category = ' +str(i))
+        plt.show()
+        auc.append(roc_auc_score(i_labels,i_probs))
 
 # =============================================================================
 # model = ViT()
