@@ -37,6 +37,7 @@ def read_hdf5(file_name):
 #%% Custom dataset (CBIS-DDSM)
 
 from torch.utils.data import Dataset, DataLoader
+from imblearn.over_sampling import RandomOverSampler 
 
 label_to_int = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 1, 'MALIGNANT' : 2 }
 label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
@@ -44,7 +45,7 @@ label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 class CBISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, file_name, transform=None, batch_size=None, binary=False, sample=None):
+    def __init__(self, file_name, batch_size=None, transform=None, binary=False, sample=None, oversample=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -56,14 +57,29 @@ class CBISDataset(Dataset):
         
         if sample:
             self.images, labels = self.images[:sample], labels[:sample]
-        if batch_size:
-            data_size = int(len(labels)/batch_size)*batch_size
-            self.images, labels = self.images[:data_size], labels[:data_size]
         
         if binary:
             self.labels = np.array([label_to_bin[i[0]] for i in labels])
         else:
             self.labels = np.array([label_to_int[i[0]] for i in labels])
+        
+        if not sample:
+            if oversample:
+                print(f"{file_name}\nLabels before oversampling - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}")
+                img_shape = self.images.shape
+                self.images = self.images.reshape(img_shape[0], img_shape[1]*img_shape[2])
+                ros = RandomOverSampler(random_state=42)
+                self.images, self.labels = ros.fit_resample(self.images, self.labels)
+                self.images = self.images.reshape(self.images.shape[0], img_shape[1], img_shape[2])
+                
+            if batch_size:
+                data_size = int(len(self.labels)/batch_size)*batch_size
+                self.images, self.labels = self.images[:data_size], self.labels[:data_size]
+            
+            if oversample:
+                print(f"Final label distribution - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}\n")
+            
+        
         self.transform = transform
 
     def __len__(self):
@@ -84,9 +100,9 @@ class CBISDataset(Dataset):
 
 
 transform = torchvision.transforms.Compose([
-     #torchvision.transforms.RandomHorizontalFlip(),
-     #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-     #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+     torchvision.transforms.RandomHorizontalFlip(),
+     torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+     torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
      torchvision.transforms.ToTensor(),
      #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
      torchvision.transforms.Normalize((0.5), (0.5))
@@ -159,16 +175,17 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
 
 if __name__ == "__main__":
 
-    batch_size = (4, 4)
+    batch_size = (20, 20)
     is_binary = False
+    oversample = True
     
     #file_name = "calc_case_description"
     file_name = "mass_case_description"
     
-    #file_params = "180x180_cropped"
-    file_params = "scaled_0.1_cropped"
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", transform, batch_size[0], is_binary)
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", transform, batch_size[1], is_binary)
+    file_params = "180x180_cropped"
+    #file_params = "scaled_0.1_cropped"
+    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform, binary=is_binary, oversample=oversample)
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], binary=is_binary, oversample=False)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
@@ -198,7 +215,14 @@ if __name__ == "__main__":
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
     
-    PATH = "./ViTRes.pt" # Use your own path
+    if oversample:
+        file_params += "_oversampled"
+    
+    model_folder_name = f"models/{file_name}_{N_EPOCHS}_{file_params}"
+    if not os.path.exists(model_folder_name):
+        os.makedirs(model_folder_name)
+    
+    PATH = f"{model_folder_name}/ViTRes.pt"
     torch.save(model.state_dict(), PATH)
     
 #%% Loss & accuracy plots
@@ -244,22 +268,31 @@ if __name__ == "__main__":
 #%% ROC curve
     
     from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay
-
+    
+    predicted_labels = [0,1] if is_binary else [0,1,2]
+    
     model.eval()
     probabilities = np.array([]).reshape(0,categories)
     labels = np.array([])
     
+    conf_mat = 0
+    
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device, dtype=torch.int64)
-            probs = model(data).cpu().numpy()
+            output = model(data)
+            _, pred = torch.max(F.log_softmax(output, dim=1), dim=1)
+            probs = output.cpu().numpy()
             probabilities = np.concatenate((probabilities,probs))
             labels = np.concatenate((labels,target.cpu().numpy()))
+            
+            conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
     
 #%%
     auc = []
     
-    loop = range(1,2) if categories==2 else range(categories)
+    #loop = range(1,2) if categories==2 else range(categories)
+    loop = range(categories)
     for i in loop:
         i_probs = probabilities[:,i]
         i_labels = (labels == i)
@@ -273,16 +306,15 @@ if __name__ == "__main__":
         
 #%% Plot confusion matrices
     
-    for c, conf in enumerate(conf_matrices[-2:]):
-        plt.matshow(conf, cmap=plt.cm.Blues)
-        
-        conf_N = conf.shape[0]
-        for i in range(conf_N):
-            for j in range(conf_N):
-                plt.text(i, j, str(conf[i,j]), va='center', ha='center')
-        if save_plots:
-            plt.savefig(f"{folder_name}/conf{c}.png")
-        plt.show()
+    plt.matshow(conf_mat, cmap=plt.cm.Blues)
+    
+    conf_N = conf_mat.shape[0]
+    for i in range(conf_N):
+        for j in range(conf_N):
+            plt.text(j, i, str(conf_mat[i,j]), va='center', ha='center')
+    if save_plots:
+        plt.savefig(f"{folder_name}/conf.png")
+    plt.show()
 
 # =============================================================================
 # model = ViT()
