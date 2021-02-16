@@ -162,16 +162,18 @@ if __name__ == "__main__":
     batch_size = (4, 4)
     is_binary = False
     
-    #file_params = "180_cropped"
-    #file_params = "400x1000_cropped"
-    file_params = "scaled_0.2_cropped"
-    train_dataset = CBISDataset(f"calc_case_description_train_set_{file_params}", transform, batch_size[0], is_binary)
-    test_dataset = CBISDataset(f"calc_case_description_test_set_{file_params}", transform, batch_size[1], is_binary)
+    #file_name = "calc_case_description"
+    file_name = "mass_case_description"
+    
+    #file_params = "180x180_cropped"
+    file_params = "scaled_0.1_cropped"
+    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", transform, batch_size[0], is_binary)
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", transform, batch_size[1], is_binary)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
-    N_EPOCHS = 50
+    N_EPOCHS = 150
     categories = 2 if is_binary else 3
     
     model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, batch_size=batch_size).to(device)
@@ -203,6 +205,14 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
     
+    save_plots = True
+    
+    folder_name = f"img/{file_name}_{file_params}"
+    
+    if save_plots:
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name)
+    
     def plot(img):
         # plot the image using matplotlib
         plt.imshow(img, cmap=plt.cm.gray)
@@ -217,13 +227,19 @@ if __name__ == "__main__":
     plt.plot(test_loss_history, 'r', label="eval")
     plt.legend(loc="upper right")
     plt.suptitle('Transformer loss')
+    if save_plots:
+        plt.savefig(f"{folder_name}/loss.png")
     plt.show()
+    plt.clf()
     
     plt.plot(train_acc_history, label="train")
     plt.plot(test_acc_history, 'r', label="eval")
     plt.legend(loc="upper left")
     plt.suptitle('Transformer accuracy')
+    if save_plots:
+        plt.savefig(f"{folder_name}/accuracy.png")
     plt.show()
+    plt.clf()
 
 #%% ROC curve
     
@@ -240,7 +256,7 @@ if __name__ == "__main__":
             probabilities = np.concatenate((probabilities,probs))
             labels = np.concatenate((labels,target.cpu().numpy()))
     
-    #%%
+#%%
     auc = []
     
     loop = range(1,2) if categories==2 else range(categories)
@@ -250,8 +266,23 @@ if __name__ == "__main__":
         fpr, tpr, _ = roc_curve(i_labels,i_probs)
         RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
         plt.suptitle('ROC curve for category = ' +str(i))
+        if save_plots:
+            plt.savefig(f"{folder_name}/roc{i}.png")
         plt.show()
         auc.append(roc_auc_score(i_labels,i_probs))
+        
+#%% Plot confusion matrices
+    
+    for c, conf in enumerate(conf_matrices[-2:]):
+        plt.matshow(conf, cmap=plt.cm.Blues)
+        
+        conf_N = conf.shape[0]
+        for i in range(conf_N):
+            for j in range(conf_N):
+                plt.text(i, j, str(conf[i,j]), va='center', ha='center')
+        if save_plots:
+            plt.savefig(f"{folder_name}/conf{c}.png")
+        plt.show()
 
 # =============================================================================
 # model = ViT()
