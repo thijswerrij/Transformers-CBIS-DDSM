@@ -8,6 +8,8 @@ import torch
 import torchvision
 import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import uuid
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -34,6 +36,11 @@ def read_hdf5(file_name):
 
     return images, labels
 
+def plot(img):
+    # plot the image using matplotlib
+    plt.imshow(img, cmap=plt.cm.gray)
+    plt.show()
+
 #%% Custom dataset (CBIS-DDSM)
 
 from torch.utils.data import Dataset, DataLoader
@@ -53,7 +60,23 @@ class CBISDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.images, labels = read_hdf5(file_name)
+        
+        # If loading the hdf5 file initially doesn't succeed, try up to three times
+        # (added as I was running multiple experiments on same data)
+        
+        for x in range(0, 3):
+            failed = False
+            try:
+                self.images, labels = read_hdf5(file_name)
+                break
+            except OSError:
+                print(f"Attempt {x+1} of loading {file_name} failed.")
+                failed = True
+            
+            if failed and x != 2:
+                time.sleep(5) # wait for a few seconds before trying again
+        if failed:
+            raise OSError(f"Loading {file_name} failed.")
         
         if sample:
             self.images, labels = self.images[:sample], labels[:sample]
@@ -89,10 +112,11 @@ class CBISDataset(Dataset):
         image = self.images[i].astype('float')
         label = np.array(self.labels[i])
         
+        
         if self.transform:
-            image = self.transform(PIL.Image.fromarray(image))
+            image = self.transform(PIL.Image.fromarray(np.copy(image)))
         else:
-            image = torchvision.transforms.ToTensor()(PIL.Image.fromarray(image))
+            image = torchvision.transforms.ToTensor()(PIL.Image.fromarray(np.copy(image)))
         
         sample = (image, label)
 
@@ -102,7 +126,7 @@ class CBISDataset(Dataset):
 transform = torchvision.transforms.Compose([
      torchvision.transforms.RandomHorizontalFlip(),
      torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-     torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+     #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
      torchvision.transforms.ToTensor(),
      #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
      torchvision.transforms.Normalize((0.5), (0.5))
@@ -175,26 +199,31 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
 
 if __name__ == "__main__":
 
-    batch_size = (20, 20)
+    batch_size = (10, 10)
     is_binary = False
     oversample = True
     
     #file_name = "calc_case_description"
     file_name = "mass_case_description"
     
-    file_params = "180x180_cropped"
-    #file_params = "scaled_0.1_cropped"
+    #file_params = "180x180_cropped"
+    file_params = "scaled_0.1_cropped"
     train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform, binary=is_binary, oversample=oversample)
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], binary=is_binary, oversample=False)
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform, binary=is_binary, oversample=False)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
-    N_EPOCHS = 150
+    N_EPOCHS = 300
     categories = 2 if is_binary else 3
     
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, batch_size=batch_size).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
+    # List of arguments
+    num_tokens = 8
+    depth = 6
+    learning_rate = 0.003
+    
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
     #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
@@ -215,53 +244,58 @@ if __name__ == "__main__":
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
     
+#%%
+    
+    if is_binary:
+        file_params += "_binary"
     if oversample:
         file_params += "_oversampled"
+    file_params += f"_epochs={N_EPOCHS}"
     
-    model_folder_name = f"models/{file_name}_{N_EPOCHS}_{file_params}"
-    if not os.path.exists(model_folder_name):
-        os.makedirs(model_folder_name)
+    results_folder_name = f"results/{file_name}_{file_params}_{str(uuid.uuid4())[:8]}"
     
-    PATH = f"{model_folder_name}/ViTRes.pt"
-    torch.save(model.state_dict(), PATH)
+#%%
+    
+    if not os.path.exists(results_folder_name):
+        os.makedirs(results_folder_name)
+    
+    if False:
+        PATH = f"{results_folder_name}/ViTRes.pt"
+        torch.save(model.state_dict(), PATH)
+        
+    params = open(f"{results_folder_name}/params.txt", 'w')
+    
+    params.write(
+        f"number of tokens: {num_tokens}\n"
+        f"depth: {depth}\n"
+        f"learning rate: {format(learning_rate, 'f')}\n"
+        f"\ntransformations: \n {transform}\n")
+    params.close()
     
 #%% Loss & accuracy plots
-
-    import matplotlib.pyplot as plt
     
     save_plots = True
-    
-    folder_name = f"img/{file_name}_{file_params}"
-    
-    if save_plots:
-        if not os.path.exists(folder_name):
-            os.makedirs(folder_name)
-    
-    def plot(img):
-        # plot the image using matplotlib
-        plt.imshow(img, cmap=plt.cm.gray)
-        plt.show()
     
     #avg_train_loss_history = np.mean(np.array(train_loss_history).reshape(N_EPOCHS,-1), axis=1)
     
     #plt.gca().set_ylim([0,None])
     
     plt.figure()
-    plt.plot(train_loss_history, label="train")
     plt.plot(test_loss_history, 'r', label="eval")
+    plt.plot(train_loss_history, label="train")
     plt.legend(loc="upper right")
     plt.suptitle('Transformer loss')
     if save_plots:
-        plt.savefig(f"{folder_name}/loss.png")
+        plt.savefig(f"{results_folder_name}/loss.png")
     plt.show()
     plt.clf()
     
-    plt.plot(train_acc_history, label="train")
     plt.plot(test_acc_history, 'r', label="eval")
+    plt.plot(train_acc_history, label="train")
     plt.legend(loc="upper left")
     plt.suptitle('Transformer accuracy')
     if save_plots:
-        plt.savefig(f"{folder_name}/accuracy.png")
+        plt.savefig(f"{results_folder_name}/accuracy.png")
     plt.show()
     plt.clf()
 
@@ -300,7 +334,7 @@ if __name__ == "__main__":
         RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
         plt.suptitle('ROC curve for category = ' +str(i))
         if save_plots:
-            plt.savefig(f"{folder_name}/roc{i}.png")
+            plt.savefig(f"{results_folder_name}/roc{i}.png")
         plt.show()
         auc.append(roc_auc_score(i_labels,i_probs))
         
@@ -313,7 +347,7 @@ if __name__ == "__main__":
         for j in range(conf_N):
             plt.text(j, i, str(conf_mat[i,j]), va='center', ha='center')
     if save_plots:
-        plt.savefig(f"{folder_name}/conf.png")
+        plt.savefig(f"{results_folder_name}/conf.png")
     plt.show()
 
 # =============================================================================
