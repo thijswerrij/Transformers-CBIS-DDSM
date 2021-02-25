@@ -61,10 +61,10 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         
-        # If loading the hdf5 file initially doesn't succeed, try up to three times
+        # If loading the hdf5 file initially doesn't succeed, try up to four times
         # (added as I was running multiple experiments on same data)
         
-        for x in range(0, 3):
+        for x in range(0, 4):
             failed = False
             try:
                 self.images, labels = read_hdf5(file_name)
@@ -73,8 +73,8 @@ class CBISDataset(Dataset):
                 print(f"Attempt {x+1} of loading {file_name} failed.")
                 failed = True
             
-            if failed and x != 2:
-                time.sleep(5) # wait for a few seconds before trying again
+            if failed and x != 3:
+                time.sleep(5*(x+1)) # wait for a few seconds before trying again
         if failed:
             raise OSError(f"Loading {file_name} failed.")
         
@@ -123,14 +123,20 @@ class CBISDataset(Dataset):
         return sample
 
 
-transform = torchvision.transforms.Compose([
-     torchvision.transforms.RandomHorizontalFlip(),
-     torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-     #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
-     torchvision.transforms.ToTensor(),
-     #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-     torchvision.transforms.Normalize((0.5), (0.5))
+transform = {
+    'train': torchvision.transforms.Compose([
+         torchvision.transforms.RandomHorizontalFlip(),
+         torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+         torchvision.transforms.ToTensor(),
+         #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+         torchvision.transforms.Normalize((0.5), (0.5))
+     ]),
+    'val': torchvision.transforms.Compose([
+         torchvision.transforms.ToTensor(),
+         torchvision.transforms.Normalize((0.5), (0.5))
      ])
+}
 
 #%%
 
@@ -208,8 +214,8 @@ if __name__ == "__main__":
     
     #file_params = "180x180_cropped"
     file_params = "scaled_0.1_cropped"
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform, binary=is_binary, oversample=oversample)
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform, binary=is_binary, oversample=False)
+    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample)
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
@@ -242,7 +248,7 @@ if __name__ == "__main__":
         predictions.append([train_predict, eval_predict])
         
     minutes, seconds = divmod(time.time() - init_time, 60)
-    print('Total execution time:', '{:.0f}m {:.2f}s'.format(minutes, seconds))
+    print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
     
 #%%
     
@@ -269,7 +275,8 @@ if __name__ == "__main__":
         f"number of tokens: {num_tokens}\n"
         f"depth: {depth}\n"
         f"learning rate: {format(learning_rate, 'f')}\n"
-        f"\ntransformations: \n {transform}\n")
+        f"\ntransformations: \n {transform}\n"
+        f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
     params.close()
     
 #%% Loss & accuracy plots
