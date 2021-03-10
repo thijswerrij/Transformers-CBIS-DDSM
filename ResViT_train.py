@@ -29,12 +29,12 @@ import numpy as np
 h5_path = "data/"
 
 def read_hdf5(file_name):
-    file = h5py.File(f"{h5_path}{file_name}.h5", "r+")
-
-    images = np.array(file["/images"]).astype("uint16")
-    labels = np.array(file["/meta"]).astype("str")
-
-    return images, labels
+    with h5py.File(f"{h5_path}{file_name}.h5", "r+") as file:
+        images = np.array(file["/images"]).astype("uint16")
+        labels = np.array(file["/meta"]).astype("str")
+        bp = np.array(file["/bp"]).astype("str")
+    
+    return images, labels, bp
 
 def plot(img):
     # plot the image using matplotlib
@@ -52,7 +52,7 @@ label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 class CBISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, file_name, batch_size=None, transform=None, binary=False, sample=None, oversample=False):
+    def __init__(self, file_name, batch_size=None, transform=None, binary=False, reorient=False, sample=None, oversample=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -67,7 +67,7 @@ class CBISDataset(Dataset):
         for x in range(0, 4):
             failed = False
             try:
-                self.images, labels = read_hdf5(file_name)
+                self.images, labels, self.bp_list = read_hdf5(file_name)
                 break
             except OSError:
                 print(f"Attempt {x+1} of loading {file_name} failed.")
@@ -79,7 +79,12 @@ class CBISDataset(Dataset):
             raise OSError(f"Loading {file_name} failed.")
         
         if sample:
-            self.images, labels = self.images[:sample], labels[:sample]
+            self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
+            
+        if reorient:
+            for i in range(len(self.bp_list)):
+                if self.bp_list[i] == 'R':
+                    self.images[i] = np.flip(self.images[i], axis=1)
         
         if binary:
             self.labels = np.array([label_to_bin[i[0]] for i in labels])
@@ -125,7 +130,7 @@ class CBISDataset(Dataset):
 
 transform = {
     'train': torchvision.transforms.Compose([
-         torchvision.transforms.RandomHorizontalFlip(),
+         #torchvision.transforms.RandomHorizontalFlip(),
          torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
          #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
          torchvision.transforms.ToTensor(),
@@ -208,14 +213,15 @@ if __name__ == "__main__":
     batch_size = (10, 10)
     is_binary = False
     oversample = True
+    reorient = (True, True)
     
     #file_name = "calc_case_description"
     file_name = "mass_case_description"
     
     #file_params = "180x180_cropped"
     file_params = "scaled_0.1_cropped"
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample)
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False)
+    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample, reorient=reorient[0])
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False, reorient=reorient[1])
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
@@ -226,7 +232,7 @@ if __name__ == "__main__":
     # List of arguments
     num_tokens = 8
     depth = 6
-    learning_rate = 0.003
+    learning_rate = 0.0003
     
     model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -275,6 +281,7 @@ if __name__ == "__main__":
         f"number of tokens: {num_tokens}\n"
         f"depth: {depth}\n"
         f"learning rate: {format(learning_rate, 'f')}\n"
+        f"reoriented: {reorient}\n"
         f"\ntransformations: \n {transform}\n"
         f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
     params.close()
