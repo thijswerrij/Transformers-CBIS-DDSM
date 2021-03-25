@@ -14,8 +14,8 @@ import uuid
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-import sys
-sys.path.append('../VisualTransformers')
+#import sys
+#sys.path.append('../VisualTransformers')
 from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,16 +227,15 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
-    N_EPOCHS = 300
+    N_EPOCHS = 1
     categories = 2 if is_binary else 3
     
     # List of arguments
     num_tokens = 16
     depth = 18
-    kernel_size = 3
     learning_rate = 0.0003
     
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, kernel_size=kernel_size, batch_size=batch_size).to(device)
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -292,7 +291,6 @@ if __name__ == "__main__":
     params.write(
         f"number of tokens: {num_tokens}\n"
         f"depth: {depth}\n"
-        f"kernel size: {kernel_size}\n"
         f"learning rate: {format(learning_rate, 'f')}\n"
         f"reoriented: {reorient}\n"
         f"\ntransformations: \n {transform}\n"
