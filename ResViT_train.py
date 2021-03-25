@@ -130,16 +130,17 @@ class CBISDataset(Dataset):
 
 transform = {
     'train': torchvision.transforms.Compose([
-         #torchvision.transforms.RandomHorizontalFlip(),
-         torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
-         torchvision.transforms.ToTensor(),
-         #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-         torchvision.transforms.Normalize((0.5), (0.5))
+        #torchvision.transforms.CenterCrop((581,315)),
+        #torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+        #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+        torchvision.transforms.ToTensor(),
+        #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        torchvision.transforms.Normalize((0.5), (0.5))
      ]),
     'val': torchvision.transforms.Compose([
-         torchvision.transforms.ToTensor(),
-         torchvision.transforms.Normalize((0.5), (0.5))
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((0.5), (0.5))
      ])
 }
 
@@ -230,11 +231,12 @@ if __name__ == "__main__":
     categories = 2 if is_binary else 3
     
     # List of arguments
-    num_tokens = 8
-    depth = 6
+    num_tokens = 16
+    depth = 18
+    kernel_size = 3
     learning_rate = 0.0003
     
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, kernel_size=kernel_size, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -271,15 +273,26 @@ if __name__ == "__main__":
     if not os.path.exists(results_folder_name):
         os.makedirs(results_folder_name)
     
-    if False:
-        PATH = f"{results_folder_name}/ViTRes.pt"
-        torch.save(model.state_dict(), PATH)
+    PATH = f"{results_folder_name}/ViTRes.pt"
+    torch.save(model.state_dict(), PATH)
+        
+    loss_history = np.stack([train_loss_history, test_loss_history])
+    acc_history = np.stack([train_acc_history, test_acc_history])
+    
+    with h5py.File(f"{results_folder_name}/stats.h5",'w') as f:
+        loss_set = f.create_dataset(
+            "loss_history", loss_history.shape, data=loss_history
+        )
+        bp_set = f.create_dataset(
+            "acc_history", acc_history.shape, data=acc_history
+        )
         
     params = open(f"{results_folder_name}/params.txt", 'w')
     
     params.write(
         f"number of tokens: {num_tokens}\n"
         f"depth: {depth}\n"
+        f"kernel size: {kernel_size}\n"
         f"learning rate: {format(learning_rate, 'f')}\n"
         f"reoriented: {reorient}\n"
         f"\ntransformations: \n {transform}\n"
