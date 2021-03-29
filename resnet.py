@@ -4,20 +4,17 @@ Created on Tue Mar 23 15:44:29 2021
 
 @author: thijs
 """
-import PIL
 import time
 import torch
 import torchvision
-import torch.nn.functional as F
-from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import uuid
+from torchvision.models import resnet18
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#device = "cpu"
 
 #%% Load hdf5
 
@@ -29,11 +26,13 @@ h5_path = "data/"
 #%% Custom dataset (CBIS-DDSM)
 
 from torch.utils.data import DataLoader
+from ResViT_train import CBISDataset, train, evaluate, plot
 
+# if is_binary = True, BENIGN and BENIGN_WITHOUT_CALLBACK are both assigned label 0
 label_to_int = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 1, 'MALIGNANT' : 2 }
 label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 
-from ResViT_train import CBISDataset, train, evaluate, plot
+#%% Transform
 
 transform = {
     'train': torchvision.transforms.Compose([
@@ -41,7 +40,7 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)),
+        torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)), # go from BW images to color images
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
      ]),
     'val': torchvision.transforms.Compose([
@@ -51,16 +50,13 @@ transform = {
      ])
 }
 
-#%%
-
-from torchvision.models import resnet18, resnet152
+#%% Training and evaluation
 
 if __name__ == "__main__":
 
     batch_size = (10, 10)
-    is_binary = False
-    oversample = False
-    reorient = (False, False)
+    is_binary = False           # 3 classes if False, 2 if True
+    oversample = False          # if True, classes are made of (roughly) equal size
     
     #file_name = "calc_case_description"
     file_name = "mass_case_description"
@@ -68,10 +64,8 @@ if __name__ == "__main__":
     #file_params = "180x180_cropped"
     file_params = "scaled_0.1_cropped"
     
-    #dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=False, reorient=False)
-    #train_dataset, test_dataset = torch.utils.data.random_split(dataset, [int(len(dataset)*0.7)+1, int(len(dataset)*0.3)])
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample, reorient=reorient[0])
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False, reorient=reorient[1])
+    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample)
+    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
@@ -104,7 +98,7 @@ if __name__ == "__main__":
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
     
-#%%
+#%% Storing of results
     
     results_folder_name = f"results/resnet_{str(uuid.uuid4())[:8]}"
     

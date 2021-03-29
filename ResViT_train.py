@@ -46,6 +46,7 @@ def plot(img):
 from torch.utils.data import Dataset, DataLoader
 from imblearn.over_sampling import RandomOverSampler 
 
+# if is_binary = True, BENIGN and BENIGN_WITHOUT_CALLBACK are both assigned label 0
 label_to_int = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 1, 'MALIGNANT' : 2 }
 label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 
@@ -127,23 +128,6 @@ class CBISDataset(Dataset):
 
         return sample
 
-
-transform = {
-    'train': torchvision.transforms.Compose([
-        #torchvision.transforms.CenterCrop((581,315)),
-        #torchvision.transforms.RandomHorizontalFlip(),
-        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-        #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
-        torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        torchvision.transforms.Normalize((0.5), (0.5))
-     ]),
-    'val': torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((0.5), (0.5))
-     ])
-}
-
 #%%
 
 def train(model, optimizer, data_loader, loss_history, acc_history):
@@ -207,14 +191,32 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
           '{:4.2f}'.format(100.0 * accuracy) + '%)\n')
     return output
 
-#%%
+#%% Transform
+
+transform = {
+    'train': torchvision.transforms.Compose([
+        #torchvision.transforms.CenterCrop((581,315)),
+        #torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+        #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
+        torchvision.transforms.ToTensor(),
+        #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        torchvision.transforms.Normalize((0.5), (0.5))
+     ]),
+    'val': torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((0.5), (0.5))
+     ])
+}
+
+#%% Training and evaluation
 
 if __name__ == "__main__":
 
     batch_size = (10, 10)
-    is_binary = False
-    oversample = True
-    reorient = (True, True)
+    is_binary = False           # 3 classes if False, 2 if True
+    oversample = True           # if True, classes are made of (roughly) equal size
+    reorient = (True, True)     # if True, makes all images in set point in same direction
     
     #file_name = "calc_case_description"
     file_name = "mass_case_description"
@@ -227,12 +229,12 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
-    N_EPOCHS = 1
+    N_EPOCHS = 300
     categories = 2 if is_binary else 3
     
     # List of arguments
-    num_tokens = 16
-    depth = 18
+    num_tokens = 16         # number of tokens used in transformer step
+    depth = 18              # number of transformer layers
     learning_rate = 0.0003
     
     model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
@@ -257,7 +259,7 @@ if __name__ == "__main__":
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
     
-#%%
+#%% Storing of results
     
     if is_binary:
         file_params += "_binary"
@@ -266,8 +268,6 @@ if __name__ == "__main__":
     file_params += f"_epochs={N_EPOCHS}"
     
     results_folder_name = f"results/{file_name}_{file_params}_{str(uuid.uuid4())[:8]}"
-    
-#%%
     
     if not os.path.exists(results_folder_name):
         os.makedirs(results_folder_name)
