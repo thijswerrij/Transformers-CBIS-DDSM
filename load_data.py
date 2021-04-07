@@ -182,7 +182,7 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, pe
                 path = path_list[p][i]
                 ds = get_image(os.path.join(images_path, path.strip()))
                 
-                pixel_array = ds.pixel_array
+                pixel_array = ds.pixel_array.astype('float64')
                 h, w = pixel_array.shape
                 
                 if crops is not None and (i==0 or i==1):
@@ -291,7 +291,8 @@ if __name__ == "__main__":
     if not sample:
         with h5py.File(h5_filename,'w') as f:
             dataset = f.create_dataset(
-                "images", saved_images.shape, data=saved_images.astype('float16'), compression='gzip'
+                #"images", saved_images.shape, data=saved_images.astype('float16'), compression='gzip'
+                "images", saved_images.shape, data=saved_images, compression='gzip'
             )
             meta_set = f.create_dataset(
                 "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)

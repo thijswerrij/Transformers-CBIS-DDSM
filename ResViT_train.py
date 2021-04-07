@@ -19,7 +19,6 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#device = "cpu"
 
 #%% Load hdf5
 
@@ -30,7 +29,7 @@ h5_path = "data/"
 
 def read_hdf5(file_name):
     with h5py.File(f"{h5_path}{file_name}.h5", "r+") as file:
-        images = np.array(file["/images"]).astype("uint16")
+        images = np.array(file["/images"]).astype('float64')
         labels = np.array(file["/meta"]).astype("str")
         bp = np.array(file["/bp"]).astype("str")
     
@@ -82,6 +81,10 @@ class CBISDataset(Dataset):
         if sample:
             self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
             
+        
+        mean_val, std_val = self.images.mean(), self.images.std()
+        print(f"{file_name}\nmean: {mean_val}\nstd: {std_val}\n")
+            
         if reorient:
             for i in range(len(self.bp_list)):
                 if self.bp_list[i] == 'R':
@@ -94,7 +97,7 @@ class CBISDataset(Dataset):
         
         if not sample:
             if oversample:
-                print(f"{file_name}\nLabels before oversampling - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}")
+                print(f"Labels before oversampling - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}")
                 img_shape = self.images.shape
                 self.images = self.images.reshape(img_shape[0], img_shape[1]*img_shape[2])
                 ros = RandomOverSampler(random_state=42)
@@ -115,14 +118,17 @@ class CBISDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, i):
-        image = self.images[i].astype('float')
+        image = self.images[i]
         label = np.array(self.labels[i])
         
+        #print(image.dtype)
         
         if self.transform:
             image = self.transform(PIL.Image.fromarray(np.copy(image)))
         else:
             image = torchvision.transforms.ToTensor()(PIL.Image.fromarray(np.copy(image)))
+        
+        #print(image.dtype)
         
         sample = (image, label)
 
@@ -197,15 +203,15 @@ transform = {
     'train': torchvision.transforms.Compose([
         #torchvision.transforms.CenterCrop((581,315)),
         #torchvision.transforms.RandomHorizontalFlip(),
-        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+        #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
         #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        torchvision.transforms.Normalize((0.5), (0.5))
+        #torchvision.transforms.Normalize((12649.1298828125), (16802.37109375))
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((0.5), (0.5))
+        #torchvision.transforms.Normalize((12253.982421875), (12253.982421875))
      ])
 }
 
@@ -226,7 +232,7 @@ if __name__ == "__main__":
     train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample, reorient=reorient[0])
     test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False, reorient=reorient[1])
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
     
     N_EPOCHS = 300

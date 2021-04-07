@@ -40,13 +40,13 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)), # go from BW images to color images
-        torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)), # go from BW images to color images
+        #torchvision.transforms.Normalize((12649.150175130975), (16802.63711350072))
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Lambda(lambda x: torch.cat([x, x, x], 0)),
-        torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
+        #torchvision.transforms.Normalize((12253.967883678959), (16916.515579701932))
      ])
 }
 
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         os.makedirs(results_folder_name)
     
     PATH = f"{results_folder_name}/resnet.pt"
-    torch.save(model.state_dict(), PATH)
+    #torch.save(model.state_dict(), PATH)
         
     loss_history = np.stack([train_loss_history, test_loss_history])
     acc_history = np.stack([train_acc_history, test_acc_history])
@@ -118,6 +118,14 @@ if __name__ == "__main__":
         bp_set = f.create_dataset(
             "acc_history", acc_history.shape, data=acc_history
         )
+        
+    params = open(f"{results_folder_name}/params.txt", 'w')
+    
+    params.write(
+        f"learning rate: {format(learning_rate, 'f')}\n"
+        f"\ntransformations: \n {transform}\n"
+        f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
+    params.close()
     
 #%% Loss & accuracy plots
     
