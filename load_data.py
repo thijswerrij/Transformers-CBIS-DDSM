@@ -89,8 +89,9 @@ def resize_image(img, max_size=0, height=0, width=0, scale=1, keep_ratio=True):
     h, w = img.shape
     
     if scale != 1:
-        return cv2.resize(img, (0, 0), fx=scale, fy=scale, 
-                          interpolation=cv2.INTER_CUBIC)
+        return cv2.resize(img, (0, 0), fx=scale, fy=scale,
+                          interpolation=cv2.INTER_AREA)
+                          #interpolation=cv2.INTER_CUBIC)
     elif height>0 and width>0:
         return cv2.resize(img, (int(width), int(height)), interpolation=cv2.INTER_CUBIC)
     elif max_size>0 and (h>max_size or w>max_size):
@@ -182,7 +183,7 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, pe
                 path = path_list[p][i]
                 ds = get_image(os.path.join(images_path, path.strip()))
                 
-                pixel_array = ds.pixel_array.astype('float64')
+                pixel_array = ds.pixel_array.astype('float32')
                 h, w = pixel_array.shape
                 
                 if crops is not None and (i==0 or i==1):
@@ -221,7 +222,7 @@ if __name__ == "__main__":
     sample = None
     
     #file_name = "calc_case_description_train_set"
-    file_name = "mass_case_description_train_set"
+    file_name = "mass_case_description_test_set"
     
     path_list, labels, direction = read_csv(f"{file_name}.csv", sample=sample)
     

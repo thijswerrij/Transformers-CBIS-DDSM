@@ -29,7 +29,7 @@ h5_path = "data/"
 
 def read_hdf5(file_name):
     with h5py.File(f"{h5_path}{file_name}.h5", "r+") as file:
-        images = np.array(file["/images"]).astype('float64')
+        images = np.array(file["/images"]).astype('float32')
         labels = np.array(file["/meta"]).astype("str")
         bp = np.array(file["/bp"]).astype("str")
     
@@ -124,9 +124,9 @@ class CBISDataset(Dataset):
         #print(image.dtype)
         
         if self.transform:
-            image = self.transform(PIL.Image.fromarray(np.copy(image)))
+            image = self.transform(np.copy(image))
         else:
-            image = torchvision.transforms.ToTensor()(PIL.Image.fromarray(np.copy(image)))
+            image = torchvision.transforms.ToTensor()(np.copy(image))
         
         #print(image.dtype)
         
@@ -206,12 +206,11 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        #torchvision.transforms.Normalize((12649.1298828125), (16802.37109375))
+        torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((12253.982421875), (12253.982421875))
+        torchvision.transforms.Normalize((12252.103515625), (16886.0234375)),
      ])
 }
 

@@ -40,13 +40,13 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)), # go from BW images to color images
-        #torchvision.transforms.Normalize((12649.150175130975), (16802.63711350072))
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((12252.103515625), (16886.0234375)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
-        #torchvision.transforms.Normalize((12253.967883678959), (16916.515579701932))
      ])
 }
 
