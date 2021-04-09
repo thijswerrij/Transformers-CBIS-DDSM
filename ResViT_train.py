@@ -28,7 +28,7 @@ import numpy as np
 h5_path = "data/"
 
 def read_hdf5(file_name):
-    with h5py.File(f"{h5_path}{file_name}.h5", "r+") as file:
+    with h5py.File(file_name, "r") as file:
         images = np.array(file["/images"]).astype('float32')
         labels = np.array(file["/meta"]).astype("str")
         bp = np.array(file["/bp"]).astype("str")
@@ -61,22 +61,7 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         
-        # If loading the hdf5 file initially doesn't succeed, try up to four times
-        # (added as I was running multiple experiments on same data)
-        
-        for x in range(0, 4):
-            failed = False
-            try:
-                self.images, labels, self.bp_list = read_hdf5(file_name)
-                break
-            except OSError:
-                print(f"Attempt {x+1} of loading {file_name} failed.")
-                failed = True
-            
-            if failed and x != 3:
-                time.sleep(5*(x+1)) # wait for a few seconds before trying again
-        if failed:
-            raise OSError(f"Loading {file_name} failed.")
+        self.images, labels, self.bp_list = read_hdf5(file_name)
         
         if sample:
             self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
