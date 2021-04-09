@@ -4,6 +4,7 @@ Created on Tue Mar 23 15:44:29 2021
 
 @author: thijs
 """
+import argparse
 import time
 import torch
 import torchvision
@@ -54,30 +55,37 @@ transform = {
 
 if __name__ == "__main__":
 
-    batch_size = (10, 10)
-    is_binary = False           # 3 classes if False, 2 if True
-    oversample = False          # if True, classes are made of (roughly) equal size
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train-data', metavar='HDF5', required=True,
+                        help='training samples (HDF5)')
+    parser.add_argument('--val-data', metavar='HDF5', required=True,
+                        help='validation samples (HDF5)')
+    parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
+    parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
+    parser.add_argument('--batch-size-train', metavar='N', type=int, default=10,
+                        help='batch size for training')
+    parser.add_argument('--batch-size-val', metavar='N', type=int, default=10,
+                        help='batch size for validation and test')
+    parser.add_argument('--binary-classification', action='store_true',
+                        help='use binary classification instead of 3-class classification')
+    parser.add_argument('--oversample', action='store_true',
+                        help='use oversampling to balance classes')
+    args = parser.parse_args()
+    vargs = vars(args)
+    print(args)
+    print()
+
+    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample)
+    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False)
     
-    #file_name = "calc_case_description"
-    file_name = "mass_case_description"
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)
     
-    #file_params = "180x180_cropped"
-    file_params = "scaled_0.1_cropped"
-    
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample)
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False)
-    
-    train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
-    
-    N_EPOCHS = 300
-    categories = 2 if is_binary else 3
+    categories = 2 if args.binary_classification else 3
     
     # List of arguments
-    learning_rate = 0.0003
-    
     model = resnet18(pretrained=True, progress=False).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
     #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
@@ -87,12 +95,12 @@ if __name__ == "__main__":
     train_acc_history, test_acc_history = [], []
     conf_matrices = []
     predictions = []
-    for epoch in range(1, N_EPOCHS + 1):
+    for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
         train_predict = train(model, optimizer, train_loader, train_loss_history, train_acc_history)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, is_binary)
+        eval_predict = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, args.binary_classification)
         predictions.append([train_predict, eval_predict])
         
     minutes, seconds = divmod(time.time() - init_time, 60)
