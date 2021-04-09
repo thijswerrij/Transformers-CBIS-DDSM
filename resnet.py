@@ -5,12 +5,15 @@ Created on Tue Mar 23 15:44:29 2021
 @author: thijs
 """
 import argparse
+import json
 import time
 import torch
 import torchvision
+import torch.utils.tensorboard
 import matplotlib.pyplot as plt
 import uuid
 from torchvision.models import resnet18
+import util
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -70,6 +73,8 @@ if __name__ == "__main__":
                         help='use binary classification instead of 3-class classification')
     parser.add_argument('--oversample', action='store_true',
                         help='use oversampling to balance classes')
+    parser.add_argument('--tensorboard-dir', metavar='DIR',
+                        help='log statistics to tensorboard')
     args = parser.parse_args()
     vargs = vars(args)
     print(args)
@@ -89,6 +94,12 @@ if __name__ == "__main__":
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
     #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
+
+    if args.tensorboard_dir:
+        tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
+        tensorboard_writer.add_text('args', json.dumps(vars(args)))
+    else:
+        tensorboard_writer = None
     
     init_time = time.time()
     train_loss_history, test_loss_history = [], []
@@ -102,6 +113,15 @@ if __name__ == "__main__":
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
         eval_predict = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, args.binary_classification)
         predictions.append([train_predict, eval_predict])
+
+        if tensorboard_writer:
+            # a bit hacky, it would be nicer if train and evaluate would return this
+            tensorboard_writer.add_scalar('loss/train', train_loss_history[-1], epoch)
+            tensorboard_writer.add_scalar('accuracy/train', train_acc_history[-1], epoch)
+            tensorboard_writer.add_scalar('loss/test', test_loss_history[-1], epoch)
+            tensorboard_writer.add_scalar('accuracy/test', test_acc_history[-1], epoch)
+            tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
+            tensorboard_writer.add_figure('confmat/test', util.plot_confmat(conf_matrices[-1]), epoch)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
