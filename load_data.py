@@ -165,7 +165,7 @@ def get_equal_crops(img, crop, patch_size):
     
     return patch
 
-def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, percentile=90, include_files=[True,True,True]):
+def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, percentile=90, include_files=[True,True,True], normalize=None):
     image_list = [[],[],[]]
     
     size_is_tuple, size_is_int = type(img_size) is tuple, type(img_size) is int
@@ -209,6 +209,10 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, pe
                     img = resize_image(pixel_array, img_size, keep_ratio=True)
                 
                 #plot(img)
+
+                if normalize:
+                    img -= normalize[0]
+                    img /= normalize[1]
                 
                 image_list[i].append(img)
     
@@ -264,11 +268,13 @@ if __name__ == "__main__":
     img_size = None
     #img_size = (180,180)
     include_files=[True,False,False]
+    #normalize = None
+    normalize = (12649.69140625, 16783.240234375)
     
     if to_crop:
-        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crops=crops, percentile=percentile, include_files=include_files)
+        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crops=crops, percentile=percentile, include_files=include_files, normalize=normalize)
     else:
-        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, include_files=include_files)
+        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, include_files=include_files, normalize=normalize)
     
     #plot_multiple(images[:], size=3)
     
@@ -282,6 +288,8 @@ if __name__ == "__main__":
         str_img_size = f"{img_size[0]}x{img_size[1]}"
     elif type(img_size) is int:
         str_img_size = str(img_size)
+    if normalize:
+        str_img_size += '_normalized'
     
     # Save images
     if to_crop:
