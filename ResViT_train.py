@@ -124,19 +124,21 @@ class CBISDataset(Dataset):
 def train(model, optimizer, data_loader, loss_history, acc_history):
     total_samples = len(data_loader.dataset)
     model.train()
+    minibatches = 0
     correct_samples = 0
     total_loss = 0
 
     for i, (data, target) in enumerate(data_loader):
+        minibatches += 1
         data, target = data.to(device), target.to(device, dtype=torch.int64)
         optimizer.zero_grad()
-        output = F.log_softmax(model(data), dim=1)
-        loss = F.nll_loss(output, target)
+        output = model(data)
+        loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
         
         total_loss += loss.item()
-        _, pred = torch.max(output, dim=1)
+        pred = torch.argmax(output, dim=1)
         correct_samples += pred.eq(target).sum().item()
 
         if i % 100 == 0:
@@ -144,7 +146,7 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
                   ' (' + '{:3.0f}'.format(100 * i / len(data_loader)) + '%)]  Loss: ' +
                   '{:6.4f}'.format(loss.item()))
         
-    avg_loss = total_loss / total_samples
+    avg_loss = total_loss / minibatches
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
@@ -154,6 +156,7 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
     model.eval()
     
     total_samples = len(data_loader.dataset)
+    minibatches = 0
     correct_samples = 0
     total_loss = 0
     conf_mat = 0
@@ -162,16 +165,17 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
 
     with torch.no_grad():
         for data, target in data_loader:
+            minibatches += 1
             data, target = data.to(device), target.to(device, dtype=torch.int64)
-            output = F.log_softmax(model(data), dim=1)
-            loss = F.nll_loss(output, target, reduction='sum')
-            _, pred = torch.max(output, dim=1)
+            output = model(data)
+            loss = F.cross_entropy(output, target)
+            pred = torch.argmax(output, dim=1)
             
             total_loss += loss.item()
             correct_samples += pred.eq(target).sum().item()
             conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
 
-    avg_loss = total_loss / total_samples
+    avg_loss = total_loss / minibatches
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
