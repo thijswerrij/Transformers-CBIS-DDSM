@@ -10,6 +10,7 @@ import time
 import torch
 import torchvision
 import torch.utils.tensorboard
+import sklearn.metrics
 import matplotlib.pyplot as plt
 import uuid
 from torchvision.models import resnet18
@@ -105,14 +106,12 @@ if __name__ == "__main__":
     train_loss_history, test_loss_history = [], []
     train_acc_history, test_acc_history = [], []
     conf_matrices = []
-    predictions = []
     for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
-        train_predict = train(model, optimizer, train_loader, train_loss_history, train_acc_history)
+        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, args.binary_classification)
-        predictions.append([train_predict, eval_predict])
+        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, args.binary_classification)
 
         if tensorboard_writer:
             # a bit hacky, it would be nicer if train and evaluate would return this
@@ -122,6 +121,12 @@ if __name__ == "__main__":
             tensorboard_writer.add_scalar('accuracy/test', test_acc_history[-1], epoch)
             tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
             tensorboard_writer.add_figure('confmat/test', util.plot_confmat(conf_matrices[-1]), epoch)
+
+            if args.binary_classification:
+                tensorboard_writer.add_scalar('auc_roc/train', sklearn.metrics.roc_auc_score(train_target == 1, train_predict[:, 1]), epoch)
+                tensorboard_writer.add_figure('roc/train', util.plot_roc_curve(train_target == 1, train_predict[:, 1]), epoch)
+                tensorboard_writer.add_scalar('auc_roc/test', sklearn.metrics.roc_auc_score(eval_target == 1, eval_predict[:, 1]), epoch)
+                tensorboard_writer.add_figure('roc/test', util.plot_roc_curve(eval_target == 1, eval_predict[:, 1]), epoch)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))

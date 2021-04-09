@@ -128,6 +128,8 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
     correct_samples = 0
     total_loss = 0
 
+    outputs, targets = [], []
+
     for i, (data, target) in enumerate(data_loader):
         minibatches += 1
         data, target = data.to(device), target.to(device, dtype=torch.int64)
@@ -136,6 +138,9 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
         loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
+
+        outputs.append(output.cpu().detach().numpy())
+        targets.append(target.cpu().detach().numpy())
         
         total_loss += loss.item()
         pred = torch.argmax(output, dim=1)
@@ -150,7 +155,9 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
-    return output
+    outputs = np.concatenate(outputs, axis=0)
+    targets = np.concatenate(targets, axis=0)
+    return outputs, targets
             
 def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binary=False):
     model.eval()
@@ -160,6 +167,8 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
     correct_samples = 0
     total_loss = 0
     conf_mat = 0
+
+    outputs, targets = [], []
     
     predicted_labels = [0,1] if binary else [0,1,2]
 
@@ -170,6 +179,9 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
             output = model(data)
             loss = F.cross_entropy(output, target)
             pred = torch.argmax(output, dim=1)
+
+            outputs.append(output.cpu().detach().numpy())
+            targets.append(target.cpu().detach().numpy())
             
             total_loss += loss.item()
             correct_samples += pred.eq(target).sum().item()
@@ -184,7 +196,9 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
           '  Accuracy:' + '{:5}'.format(correct_samples) + '/' +
           '{:5}'.format(total_samples) + ' (' +
           '{:4.2f}'.format(100.0 * accuracy) + '%)\n')
-    return output
+    outputs = np.concatenate(outputs, axis=0)
+    targets = np.concatenate(targets, axis=0)
+    return outputs, targets
 
 #%% Transform
 
