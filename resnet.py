@@ -49,7 +49,7 @@ transform = {
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12252.103515625), (16886.0234375)),
+        torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
      ])
 }
