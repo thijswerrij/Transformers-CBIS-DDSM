@@ -105,13 +105,13 @@ if __name__ == "__main__":
     init_time = time.time()
     train_loss_history, test_loss_history = [], []
     train_acc_history, test_acc_history = [], []
-    conf_matrices = []
+    train_conf_matrices, test_conf_matrices = [], []
     for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
-        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history)
+        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, args.binary_classification)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, args.binary_classification)
+        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, args.binary_classification)
 
         if tensorboard_writer:
             # a bit hacky, it would be nicer if train and evaluate would return this
@@ -120,7 +120,8 @@ if __name__ == "__main__":
             tensorboard_writer.add_scalar('loss/test', test_loss_history[-1], epoch)
             tensorboard_writer.add_scalar('accuracy/test', test_acc_history[-1], epoch)
             tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
-            tensorboard_writer.add_figure('confmat/test', util.plot_confmat(conf_matrices[-1]), epoch)
+            tensorboard_writer.add_figure('confmat/train', util.plot_confmat(train_conf_matrices[-1]), epoch)
+            tensorboard_writer.add_figure('confmat/test', util.plot_confmat(test_conf_matrices[-1]), epoch)
 
             if args.binary_classification:
                 tensorboard_writer.add_scalar('auc_roc/train', sklearn.metrics.roc_auc_score(train_target == 1, train_predict[:, 1]), epoch)

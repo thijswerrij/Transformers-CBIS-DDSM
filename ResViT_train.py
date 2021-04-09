@@ -121,14 +121,17 @@ class CBISDataset(Dataset):
 
 #%%
 
-def train(model, optimizer, data_loader, loss_history, acc_history):
+def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrices, binary=False):
     total_samples = len(data_loader.dataset)
     model.train()
     minibatches = 0
     correct_samples = 0
     total_loss = 0
+    conf_mat = 0
 
     outputs, targets = [], []
+
+    predicted_labels = [0,1] if binary else [0,1,2]
 
     for i, (data, target) in enumerate(data_loader):
         minibatches += 1
@@ -145,6 +148,7 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
         total_loss += loss.item()
         pred = torch.argmax(output, dim=1)
         correct_samples += pred.eq(target).sum().item()
+        conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
 
         if i % 100 == 0:
             print('[' +  '{:5}'.format(i * len(data)) + '/' + '{:5}'.format(total_samples) +
@@ -155,6 +159,7 @@ def train(model, optimizer, data_loader, loss_history, acc_history):
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
+    conf_matrices.append(conf_mat)
     outputs = np.concatenate(outputs, axis=0)
     targets = np.concatenate(targets, axis=0)
     return outputs, targets
