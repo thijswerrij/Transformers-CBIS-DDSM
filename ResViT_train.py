@@ -28,7 +28,7 @@ import numpy as np
 h5_path = "data/"
 
 def read_hdf5(file_name):
-    with h5py.File(f"{h5_path}{file_name}.h5", "r+") as file:
+    with h5py.File(file_name, "r") as file:
         images = np.array(file["/images"]).astype('float32')
         labels = np.array(file["/meta"]).astype("str")
         bp = np.array(file["/bp"]).astype("str")
@@ -61,22 +61,7 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         
-        # If loading the hdf5 file initially doesn't succeed, try up to four times
-        # (added as I was running multiple experiments on same data)
-        
-        for x in range(0, 4):
-            failed = False
-            try:
-                self.images, labels, self.bp_list = read_hdf5(file_name)
-                break
-            except OSError:
-                print(f"Attempt {x+1} of loading {file_name} failed.")
-                failed = True
-            
-            if failed and x != 3:
-                time.sleep(5*(x+1)) # wait for a few seconds before trying again
-        if failed:
-            raise OSError(f"Loading {file_name} failed.")
+        self.images, labels, self.bp_list = read_hdf5(file_name)
         
         if sample:
             self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
@@ -156,57 +141,78 @@ def get_mean_std(loader, non_zero=False):
 
 #%%
 
-def train(model, optimizer, data_loader, loss_history, acc_history):
+def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrices, binary=False):
     total_samples = len(data_loader.dataset)
     model.train()
+    minibatches = 0
     correct_samples = 0
     total_loss = 0
+    conf_mat = 0
+
+    outputs, targets = [], []
+
+    predicted_labels = [0,1] if binary else [0,1,2]
 
     for i, (data, target) in enumerate(data_loader):
+        minibatches += 1
         data, target = data.to(device), target.to(device, dtype=torch.int64)
         optimizer.zero_grad()
-        output = F.log_softmax(model(data), dim=1)
-        loss = F.nll_loss(output, target)
+        output = model(data)
+        loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
+
+        outputs.append(output.cpu().detach().numpy())
+        targets.append(target.cpu().detach().numpy())
         
         total_loss += loss.item()
-        _, pred = torch.max(output, dim=1)
+        pred = torch.argmax(output, dim=1)
         correct_samples += pred.eq(target).sum().item()
+        conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
 
         if i % 100 == 0:
             print('[' +  '{:5}'.format(i * len(data)) + '/' + '{:5}'.format(total_samples) +
                   ' (' + '{:3.0f}'.format(100 * i / len(data_loader)) + '%)]  Loss: ' +
                   '{:6.4f}'.format(loss.item()))
         
-    avg_loss = total_loss / total_samples
+    avg_loss = total_loss / minibatches
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
-    return output
+    conf_matrices.append(conf_mat)
+    outputs = np.concatenate(outputs, axis=0)
+    targets = np.concatenate(targets, axis=0)
+    return outputs, targets
             
 def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binary=False):
     model.eval()
     
     total_samples = len(data_loader.dataset)
+    minibatches = 0
     correct_samples = 0
     total_loss = 0
     conf_mat = 0
+
+    outputs, targets = [], []
     
     predicted_labels = [0,1] if binary else [0,1,2]
 
     with torch.no_grad():
         for data, target in data_loader:
+            minibatches += 1
             data, target = data.to(device), target.to(device, dtype=torch.int64)
-            output = F.log_softmax(model(data), dim=1)
-            loss = F.nll_loss(output, target, reduction='sum')
-            _, pred = torch.max(output, dim=1)
+            output = model(data)
+            loss = F.cross_entropy(output, target)
+            pred = torch.argmax(output, dim=1)
+
+            outputs.append(output.cpu().detach().numpy())
+            targets.append(target.cpu().detach().numpy())
             
             total_loss += loss.item()
             correct_samples += pred.eq(target).sum().item()
             conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
 
-    avg_loss = total_loss / total_samples
+    avg_loss = total_loss / minibatches
     accuracy = correct_samples / total_samples
     loss_history.append(avg_loss)
     acc_history.append(accuracy)
@@ -215,7 +221,9 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
           '  Accuracy:' + '{:5}'.format(correct_samples) + '/' +
           '{:5}'.format(total_samples) + ' (' +
           '{:4.2f}'.format(100.0 * accuracy) + '%)\n')
-    return output
+    outputs = np.concatenate(outputs, axis=0)
+    targets = np.concatenate(targets, axis=0)
+    return outputs, targets
 
 #%% Transform
 

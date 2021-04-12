@@ -1,0 +1,2 @@
+python -u resnet.py --train-data data/mass_case_description_train_set_scaled_0.1_normalized_cropped.h5 --val-data data/mass_case_description_test_set_scaled_0.1_normalized_cropped.h5 --learning-rate 0.00001 --binary-classification --tensorboard-dir tensorboard/test-scale0.1
+python -u resnet.py --train-data data/mass_case_description_train_set_scaled_0.25_normalized_cropped.h5 --val-data data/mass_case_description_test_set_scaled_0.25_normalized_cropped.h5 --learning-rate 0.00001 --binary-classification --tensorboard-dir tensorboard/test-scale0.25
