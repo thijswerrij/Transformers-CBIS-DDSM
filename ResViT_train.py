@@ -67,8 +67,8 @@ class CBISDataset(Dataset):
             self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
             
         
-        mean_val, std_val = self.images.mean(), self.images.std()
-        print(f"{file_name}\nmean: {mean_val}\nstd: {std_val}\n")
+        #mean_val, std_val = self.images.mean(), self.images.std()
+        #print(f"{file_name}\nmean: {mean_val}\nstd: {std_val}\n")
             
         if reorient:
             for i in range(len(self.bp_list)):
@@ -118,6 +118,26 @@ class CBISDataset(Dataset):
         sample = (image, label)
 
         return sample
+    
+def get_mean_std(loader, non_zero=False):
+    total_sum, total_squared_sum, num_batches = 0, 0, 0
+    
+    for data, _ in loader:
+        if non_zero:
+            minimum = data.min()
+            data[data == minimum] = 0
+            mask = data != minimum
+            total_sum += data.sum()/mask.sum()
+            total_squared_sum += (data**2).sum()/mask.sum()
+        else:
+            total_sum += torch.mean(data)
+            total_squared_sum += torch.mean(data**2)
+        num_batches += 1
+    
+    mean = total_sum / num_batches
+    std = (total_squared_sum / num_batches - mean**2)**0.5
+    
+    return mean, std
 
 #%%
 
@@ -214,11 +234,11 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
+        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12252.103515625), (16886.0234375)),
+        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
      ])
 }
 
@@ -241,6 +261,11 @@ if __name__ == "__main__":
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True, num_workers=1)
     test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
+    
+    mean, std = get_mean_std(train_loader)
+    print(f"Mean {mean}, std {std}")
+    
+    #%%
     
     N_EPOCHS = 300
     categories = 2 if is_binary else 3

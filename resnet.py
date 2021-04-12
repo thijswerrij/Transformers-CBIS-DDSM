@@ -45,12 +45,12 @@ transform = {
         #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-#       torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
+        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)), # go from BW images to color images
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-#       torchvision.transforms.Normalize((12649.69140625), (16783.240234375)),
+        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
      ])
 }
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     params = open(f"{results_folder_name}/params.txt", 'w')
     
     params.write(
-        f"learning rate: {format(learning_rate, 'f')}\n"
+        f"learning rate: {format(args.learning_rate, 'f')}\n"
         f"\ntransformations: \n {transform}\n"
         f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
     params.close()
