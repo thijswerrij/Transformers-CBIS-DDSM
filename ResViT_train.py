@@ -8,10 +8,13 @@ import time
 import PIL
 import torch
 import torchvision
+import torch.utils.tensorboard
+import sklearn.metrics
 import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import uuid
+import util
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -143,7 +146,7 @@ def get_mean_std(loader, non_zero=False):
 
 #%%
 
-def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrices, binary=False):
+def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrices, epoch, binary=False, tensorboard_writer=None):
     total_samples = len(data_loader.dataset)
     model.train()
     minibatches = 0
@@ -184,9 +187,19 @@ def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrice
     conf_matrices.append(conf_mat)
     outputs = np.concatenate(outputs, axis=0)
     targets = np.concatenate(targets, axis=0)
+    
+    if tensorboard_writer:
+        tensorboard_writer.add_scalar('loss/train', avg_loss, epoch)
+        tensorboard_writer.add_scalar('accuracy/train', accuracy, epoch)
+        tensorboard_writer.add_figure('confmat/train', util.plot_confmat(conf_mat), epoch)
+    
+        if binary:
+            tensorboard_writer.add_scalar('auc_roc/train', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
+            tensorboard_writer.add_figure('roc/train', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
+    
     return outputs, targets
             
-def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binary=False):
+def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, epoch, binary=False, tensorboard_writer=None):
     model.eval()
     
     total_samples = len(data_loader.dataset)
@@ -225,6 +238,16 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
           '{:4.2f}'.format(100.0 * accuracy) + '%)\n')
     outputs = np.concatenate(outputs, axis=0)
     targets = np.concatenate(targets, axis=0)
+    
+    if tensorboard_writer:
+        tensorboard_writer.add_scalar('loss/test', avg_loss, epoch)
+        tensorboard_writer.add_scalar('accuracy/test', accuracy, epoch)
+        tensorboard_writer.add_figure('confmat/test', util.plot_confmat(conf_mat), epoch)
+    
+        if binary:
+            tensorboard_writer.add_scalar('auc_roc/test', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
+            tensorboard_writer.add_figure('roc/test', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
+    
     return outputs, targets
 
 #%% Transform
@@ -303,6 +326,13 @@ if __name__ == "__main__":
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
     #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
     
+    if args.tensorboard_dir:
+        tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
+        tensorboard_writer.add_text('args', json.dumps(vars(args)))
+        tensorboard_writer.add_text('transform', str(transform))
+    else:
+        tensorboard_writer = None
+    
     init_time = time.time()
     train_loss_history, test_loss_history = [], []
     train_acc_history, test_acc_history = [], []
@@ -310,9 +340,12 @@ if __name__ == "__main__":
     for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
-        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, args.binary_classification)
+        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, args.binary_classification)
+        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
+        
+        if tensorboard_writer:
+            tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))

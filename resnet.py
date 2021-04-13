@@ -47,12 +47,12 @@ transform = {
         torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((12649.69140625, 16783.240234375)),
+        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)), # not necessary with pre-normalized dataset
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)), # go from BW images to color images
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((12649.69140625, 16783.240234375)),
+        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
      ])
 }
@@ -62,11 +62,11 @@ transform = {
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train-data', metavar='HDF5', #required=True, # currently using default values for testing
-                        default="data/mass_case_description_train_set_scaled_0.1_cropped.h5",
+    parser.add_argument('--train-data', metavar='HDF5', #required=True, # temporary default values for easier testing
+                        default="data/mass_case_description_train_set_scaled_0.1_normalized_cropped.h5",
                         help='training samples (HDF5)')
     parser.add_argument('--val-data', metavar='HDF5', #required=True,
-                        default="data/mass_case_description_test_set_scaled_0.1_cropped.h5",
+                        default="data/mass_case_description_test_set_scaled_0.1_normalized_cropped.h5",
                         help='validation samples (HDF5)')
     parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
     parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
@@ -78,6 +78,8 @@ if __name__ == "__main__":
                         help='use binary classification instead of 3-class classification')
     parser.add_argument('--oversample', action='store_true',
                         help='use oversampling to balance classes')
+    parser.add_argument('--num-workers', type=int, default=0,
+                        help='num_workers passed to train_loader')
     parser.add_argument('--tensorboard-dir', metavar='DIR',
                         help='log statistics to tensorboard')
     args = parser.parse_args()
@@ -88,12 +90,13 @@ if __name__ == "__main__":
     train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample)
     test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False)
     
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)
+    
+    #%%
     
     categories = 2 if args.binary_classification else 3
     
-    # List of arguments
     model = resnet18(pretrained=True, progress=False).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
@@ -114,25 +117,12 @@ if __name__ == "__main__":
     for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
-        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, args.binary_classification)
+        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, args.binary_classification)
+        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
 
         if tensorboard_writer:
-            # a bit hacky, it would be nicer if train and evaluate would return this
-            tensorboard_writer.add_scalar('loss/train', train_loss_history[-1], epoch)
-            tensorboard_writer.add_scalar('accuracy/train', train_acc_history[-1], epoch)
-            tensorboard_writer.add_scalar('loss/test', test_loss_history[-1], epoch)
-            tensorboard_writer.add_scalar('accuracy/test', test_acc_history[-1], epoch)
             tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
-            tensorboard_writer.add_figure('confmat/train', util.plot_confmat(train_conf_matrices[-1]), epoch)
-            tensorboard_writer.add_figure('confmat/test', util.plot_confmat(test_conf_matrices[-1]), epoch)
-
-            if args.binary_classification:
-                tensorboard_writer.add_scalar('auc_roc/train', sklearn.metrics.roc_auc_score(train_target == 1, train_predict[:, 1]), epoch)
-                tensorboard_writer.add_figure('roc/train', util.plot_roc_curve(train_target == 1, train_predict[:, 1]), epoch)
-                tensorboard_writer.add_scalar('auc_roc/test', sklearn.metrics.roc_auc_score(eval_target == 1, eval_predict[:, 1]), epoch)
-                tensorboard_writer.add_figure('roc/test', util.plot_roc_curve(eval_target == 1, eval_predict[:, 1]), epoch)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
