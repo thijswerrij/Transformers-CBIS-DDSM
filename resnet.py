@@ -7,6 +7,7 @@ Created on Tue Mar 23 15:44:29 2021
 import argparse
 import json
 import time
+import PIL
 import torch
 import torchvision
 import torch.utils.tensorboard
@@ -41,16 +42,17 @@ label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 
 transform = {
     'train': torchvision.transforms.Compose([
-        #torchvision.transforms.RandomHorizontalFlip(),
-        #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+        torchvision.transforms.ToPILImage(),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
+        #torchvision.transforms.Normalize((12649.69140625, 16783.240234375)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)), # go from BW images to color images
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
+        #torchvision.transforms.Normalize((12649.69140625, 16783.240234375)),
         torchvision.transforms.Lambda(lambda x: x.expand(3, -1, -1)),
      ])
 }
@@ -60,9 +62,11 @@ transform = {
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train-data', metavar='HDF5', required=True,
+    parser.add_argument('--train-data', metavar='HDF5', #required=True, # currently using default values for testing
+                        default="data/mass_case_description_train_set_scaled_0.1_cropped.h5",
                         help='training samples (HDF5)')
-    parser.add_argument('--val-data', metavar='HDF5', required=True,
+    parser.add_argument('--val-data', metavar='HDF5', #required=True,
+                        default="data/mass_case_description_test_set_scaled_0.1_cropped.h5",
                         help='validation samples (HDF5)')
     parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
     parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
@@ -78,7 +82,7 @@ if __name__ == "__main__":
                         help='log statistics to tensorboard')
     args = parser.parse_args()
     vargs = vars(args)
-    print(args)
+    print(vargs)
     print()
 
     train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample)
@@ -99,6 +103,7 @@ if __name__ == "__main__":
     if args.tensorboard_dir:
         tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
         tensorboard_writer.add_text('args', json.dumps(vars(args)))
+        tensorboard_writer.add_text('transform', str(transform))
     else:
         tensorboard_writer = None
     
@@ -134,7 +139,8 @@ if __name__ == "__main__":
     
 #%% Storing of results
     
-    results_folder_name = f"results/resnet_{str(uuid.uuid4())[:8]}"
+    file_name = args.train_data.split("/")[-1][0:9] # file name, e.g. mass_case
+    results_folder_name = f"results/resnet_{file_name}_{str(uuid.uuid4())[:8]}"
     
     if not os.path.exists(results_folder_name):
         os.makedirs(results_folder_name)
@@ -156,7 +162,7 @@ if __name__ == "__main__":
     params = open(f"{results_folder_name}/params.txt", 'w')
     
     params.write(
-        f"learning rate: {format(args.learning_rate, 'f')}\n"
+        f"arguments:\n{vargs}\n"
         f"\ntransformations: \n {transform}\n"
         f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
     params.close()

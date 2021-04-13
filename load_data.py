@@ -269,7 +269,7 @@ if __name__ == "__main__":
     #img_size = (180,180)
     include_files=[True,False,False]
     #normalize = None
-    normalize = (12649.69140625, 16783.240234375)
+    normalize = (12513.3505859375, 16529.138671875)
     
     if to_crop:
         images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crops=crops, percentile=percentile, include_files=include_files, normalize=normalize)
