@@ -2,8 +2,10 @@
 """
 Custom version of ResViT to train on CBIS-DDSM
 """
-import PIL
+import argparse
+import json
 import time
+import PIL
 import torch
 import torchvision
 import torch.nn.functional as F
@@ -229,54 +231,74 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, binar
 
 transform = {
     'train': torchvision.transforms.Compose([
+        torchvision.transforms.ToPILImage(),
         #torchvision.transforms.CenterCrop((581,315)),
-        #torchvision.transforms.RandomHorizontalFlip(),
-        #torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
         #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
+        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)), # not necessary with pre-normalized dataset
      ]),
     'val': torchvision.transforms.Compose([
         torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
+        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
      ])
 }
 
 #%% Training and evaluation
 
 if __name__ == "__main__":
-
-    batch_size = (10, 10)
-    is_binary = False           # 3 classes if False, 2 if True
-    oversample = True           # if True, classes are made of (roughly) equal size
-    reorient = (True, True)     # if True, makes all images in set point in same direction
     
-    #file_name = "calc_case_description"
-    file_name = "mass_case_description"
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train-data', metavar='HDF5', #required=True, # temporary default values for easier testing
+                        default="data/mass_case_description_train_set_scaled_0.1_normalized_cropped.h5",
+                        help='training samples (HDF5)')
+    parser.add_argument('--val-data', metavar='HDF5', #required=True,
+                        default="data/mass_case_description_test_set_scaled_0.1_normalized_cropped.h5",
+                        help='validation samples (HDF5)')
+    parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
+    parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
+    parser.add_argument('--batch-size-train', metavar='N', type=int, default=10,
+                        help='batch size for training')
+    parser.add_argument('--batch-size-val', metavar='N', type=int, default=10,
+                        help='batch size for validation and test')
+    parser.add_argument('--binary-classification', action='store_true',
+                        help='use binary classification instead of 3-class classification')
+    parser.add_argument('--oversample', action='store_true',
+                        help='use oversampling to balance classes')
+    parser.add_argument('--reorient-train', action='store_true',
+                        help='reorient all images in the same direction')
+    parser.add_argument('--reorient-val', action='store_true',
+                        help='reorient all images in the same direction')
+    parser.add_argument('--num-workers', type=int, default=0,
+                        help='num_workers passed to train_loader')
+    parser.add_argument('--tensorboard-dir', metavar='DIR',
+                        help='log statistics to tensorboard')
+    args = parser.parse_args()
+    vargs = vars(args)
+    print(vargs)
+    print()
     
-    #file_params = "180x180_cropped"
-    file_params = "scaled_0.1_cropped"
-    train_dataset = CBISDataset(f"{file_name}_train_set_{file_params}", batch_size[0], transform['train'], binary=is_binary, oversample=oversample, reorient=reorient[0])
-    test_dataset = CBISDataset(f"{file_name}_test_set_{file_params}", batch_size[1], transform['val'], binary=is_binary, oversample=False, reorient=reorient[1])
+    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, reorient=args.reorient_train)
+    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, reorient=args.reorient_val)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size[0], shuffle=True, num_workers=1)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size[1], shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)
     
-    mean, std = get_mean_std(train_loader)
-    print(f"Mean {mean}, std {std}")
+    #mean, std = get_mean_std(train_loader)
+    #print(f"Mean {mean}, std {std}")
     
     #%%
     
-    N_EPOCHS = 300
-    categories = 2 if is_binary else 3
+    categories = 2 if args.binary_classification else 3
+    batch_size = (args.batch_size_train, args.batch_size_val)
     
     # List of arguments
-    num_tokens = 16         # number of tokens used in transformer step
-    depth = 18              # number of transformer layers
-    learning_rate = 0.0003
+    num_tokens = 8         # number of tokens used in transformer step
+    depth = 6              # number of transformer layers
     
     model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
     #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
@@ -284,28 +306,21 @@ if __name__ == "__main__":
     init_time = time.time()
     train_loss_history, test_loss_history = [], []
     train_acc_history, test_acc_history = [], []
-    conf_matrices = []
-    predictions = []
-    for epoch in range(1, N_EPOCHS + 1):
+    train_conf_matrices, test_conf_matrices = [], []
+    for epoch in range(1, args.epochs + 1):
         print('Epoch:', epoch)
         start_time = time.time()
-        train_predict = train(model, optimizer, train_loader, train_loss_history, train_acc_history)
+        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, args.binary_classification)
         print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict = evaluate(model, test_loader, test_loss_history, test_acc_history, conf_matrices, is_binary)
-        predictions.append([train_predict, eval_predict])
+        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, args.binary_classification)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
     
 #%% Storing of results
     
-    if is_binary:
-        file_params += "_binary"
-    if oversample:
-        file_params += "_oversampled"
-    file_params += f"_epochs={N_EPOCHS}"
-    
-    results_folder_name = f"results/{file_name}_{file_params}_{str(uuid.uuid4())[:8]}"
+    file_name = args.train_data.split("/")[-1][0:9] # file name, e.g. mass_case
+    results_folder_name = f"results/transformer_{file_name}_{str(uuid.uuid4())[:8]}"
     
     if not os.path.exists(results_folder_name):
         os.makedirs(results_folder_name)
@@ -327,10 +342,9 @@ if __name__ == "__main__":
     params = open(f"{results_folder_name}/params.txt", 'w')
     
     params.write(
+        f"arguments:\n{vargs}\n"
         f"number of tokens: {num_tokens}\n"
         f"depth: {depth}\n"
-        f"learning rate: {format(learning_rate, 'f')}\n"
-        f"reoriented: {reorient}\n"
         f"\ntransformations: \n {transform}\n"
         f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
     params.close()
@@ -366,7 +380,7 @@ if __name__ == "__main__":
     
     from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay
     
-    predicted_labels = [0,1] if is_binary else [0,1,2]
+    predicted_labels = [0,1] if args.binary_classification else [0,1,2]
     
     model.eval()
     probabilities = np.array([]).reshape(0,categories)
