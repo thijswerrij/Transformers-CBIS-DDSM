@@ -1,8 +1,9 @@
 __pycache__
 *.pt
 
-results/*
-!results/*.ipynb
+results
 
 data/*
 !data/crops/
+
+tensorboard
