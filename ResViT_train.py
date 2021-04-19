@@ -2,7 +2,6 @@
 """
 Custom version of ResViT to train on CBIS-DDSM
 """
-import argparse
 import json
 import time
 import PIL
@@ -13,7 +12,6 @@ import sklearn.metrics
 import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
-import uuid
 import util
 
 import os
@@ -327,115 +325,14 @@ if __name__ == "__main__":
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
     
-#%% Storing of results
-    
-    file_name = args.train_data.split("/")[-1][0:9] # file name, e.g. mass_case
-    results_folder_name = f"results/transformer_{file_name}_{str(uuid.uuid4())[:8]}"
-    
-    if not os.path.exists(results_folder_name):
-        os.makedirs(results_folder_name)
-    
-    PATH = f"{results_folder_name}/ViTRes.pt"
-    torch.save(model.state_dict(), PATH)
-        
-    loss_history = np.stack([train_loss_history, test_loss_history])
-    acc_history = np.stack([train_acc_history, test_acc_history])
-    
-    with h5py.File(f"{results_folder_name}/stats.h5",'w') as f:
-        loss_set = f.create_dataset(
-            "loss_history", loss_history.shape, data=loss_history
-        )
-        bp_set = f.create_dataset(
-            "acc_history", acc_history.shape, data=acc_history
-        )
-        
-    params = open(f"{results_folder_name}/params.txt", 'w')
-    
-    params.write(
-        f"arguments:\n{vargs}\n"
-        f"number of tokens: {num_tokens}\n"
-        f"depth: {depth}\n"
-        f"\ntransformations: \n {transform}\n"
-        f"\nExecution time: {int(minutes)}m {seconds:.1f}s")
-    params.close()
-    
-#%% Loss & accuracy plots
-    
-    save_plots = True
-    
-    #avg_train_loss_history = np.mean(np.array(train_loss_history).reshape(N_EPOCHS,-1), axis=1)
-    
-    #plt.gca().set_ylim([0,None])
-    
-    plt.figure()
-    plt.plot(test_loss_history, 'r', label="eval")
-    plt.plot(train_loss_history, label="train")
-    plt.legend(loc="upper right")
-    plt.suptitle('Transformer loss')
-    if save_plots:
-        plt.savefig(f"{results_folder_name}/loss.png")
-    plt.show()
-    plt.clf()
-    
-    plt.plot(test_acc_history, 'r', label="eval")
-    plt.plot(train_acc_history, label="train")
-    plt.legend(loc="upper left")
-    plt.suptitle('Transformer accuracy')
-    if save_plots:
-        plt.savefig(f"{results_folder_name}/accuracy.png")
-    plt.show()
-    plt.clf()
+#%% Save model
 
-#%% ROC curve
-    
-    from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay
-    
-    predicted_labels = [0,1] if args.binary_classification else [0,1,2]
-    
-    model.eval()
-    probabilities = np.array([]).reshape(0,categories)
-    labels = np.array([])
-    
-    conf_mat = 0
-    
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device, dtype=torch.int64)
-            output = model(data)
-            _, pred = torch.max(F.log_softmax(output, dim=1), dim=1)
-            probs = output.cpu().numpy()
-            probabilities = np.concatenate((probabilities,probs))
-            labels = np.concatenate((labels,target.cpu().numpy()))
-            
-            conf_mat = np.add(conf_mat, confusion_matrix(target.cpu(),pred.cpu(), labels=predicted_labels))
-    
-#%%
-    auc = []
-    
-    #loop = range(1,2) if categories==2 else range(categories)
-    loop = range(categories)
-    for i in loop:
-        i_probs = probabilities[:,i]
-        i_labels = (labels == i)
-        fpr, tpr, _ = roc_curve(i_labels,i_probs)
-        RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
-        plt.suptitle('ROC curve for category = ' +str(i))
-        if save_plots:
-            plt.savefig(f"{results_folder_name}/roc{i}.png")
-        plt.show()
-        auc.append(roc_auc_score(i_labels,i_probs))
+    if type(args.model) is str:
         
-#%% Plot confusion matrices
-    
-    plt.matshow(conf_mat, cmap=plt.cm.Blues)
-    
-    conf_N = conf_mat.shape[0]
-    for i in range(conf_N):
-        for j in range(conf_N):
-            plt.text(j, i, str(conf_mat[i,j]), va='center', ha='center')
-    if save_plots:
-        plt.savefig(f"{results_folder_name}/conf.png")
-    plt.show()
+        if not os.path.exists(args.model):
+            os.makedirs(args.model)
+        
+        torch.save(model.state_dict(), f"{args.model}/model.pt")
 
 # =============================================================================
 # model = ViT()

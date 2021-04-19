@@ -27,3 +27,5 @@ parser.add_argument('--num-workers', type=int, default=0,
                     help='num_workers passed to train_loader')
 parser.add_argument('--tensorboard-dir', metavar='DIR',
                     help='log statistics to tensorboard')
+parser.add_argument('--model', metavar='DIR',
+                    help='save model to given directory')
