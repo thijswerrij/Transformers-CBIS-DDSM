@@ -59,29 +59,12 @@ transform = {
 
 #%% Training and evaluation
 
+from args import parser
+
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--train-data', metavar='HDF5', #required=True, # temporary default values for easier testing
-                        default="data/mass_case_description_train_set_scaled_0.1_normalized_cropped.h5",
-                        help='training samples (HDF5)')
-    parser.add_argument('--val-data', metavar='HDF5', #required=True,
-                        default="data/mass_case_description_test_set_scaled_0.1_normalized_cropped.h5",
-                        help='validation samples (HDF5)')
-    parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
-    parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
-    parser.add_argument('--batch-size-train', metavar='N', type=int, default=10,
-                        help='batch size for training')
-    parser.add_argument('--batch-size-val', metavar='N', type=int, default=10,
-                        help='batch size for validation and test')
-    parser.add_argument('--binary-classification', action='store_true',
-                        help='use binary classification instead of 3-class classification')
-    parser.add_argument('--oversample', action='store_true',
-                        help='use oversampling to balance classes')
-    parser.add_argument('--num-workers', type=int, default=0,
-                        help='num_workers passed to train_loader')
-    parser.add_argument('--tensorboard-dir', metavar='DIR',
-                        help='log statistics to tensorboard')
+    parser.add_argument('--no_pretrain', action='store_true',
+                        help='do not use pretraining (pretrained ResNet is used by default)')
     args = parser.parse_args()
     vargs = vars(args)
     print(vargs)
@@ -96,8 +79,9 @@ if __name__ == "__main__":
     #%%
     
     categories = 2 if args.binary_classification else 3
+    pretrained = not args.no_pretrain
     
-    model = resnet18(pretrained=True, progress=False).to(device)
+    model = resnet18(pretrained=pretrained, progress=False).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
