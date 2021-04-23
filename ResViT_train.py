@@ -272,6 +272,8 @@ from args import parser
 
 if __name__ == "__main__":
 
+    parser.add_argument('--out-channels', metavar='N', type=int, default=16,
+                    help='first BasicBlock will output feature map of size N, after that 2*N and finally 4*N')
     args = parser.parse_args()
     vargs = vars(args)
     print(vargs)
@@ -292,10 +294,10 @@ if __name__ == "__main__":
     batch_size = (args.batch_size_train, args.batch_size_val)
     
     # List of arguments
-    num_tokens = 8         # number of tokens used in transformer step
-    depth = 6              # number of transformer layers
+    num_tokens = args.num_tokens    # number of tokens used in transformer step
+    depth = args.transform_depth    # number of transformer layers
     
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, out_channels=args.out_channels, num_classes=categories, dim=args.dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)

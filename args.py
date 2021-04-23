@@ -23,6 +23,12 @@ parser.add_argument('--reorient-train', action='store_true',
                     help='reorient all images in the same direction')
 parser.add_argument('--reorient-val', action='store_true',
                     help='reorient all images in the same direction')
+parser.add_argument('--num-tokens', metavar='N', type=int, default=16,
+                    help='specifies the number of tokens used by transformer')
+parser.add_argument('--transform-depth', metavar='N', type=int, default=6,
+                    help='specifies the number transformer layers')
+parser.add_argument('--dim', metavar='N', type=int, default=128,
+                    help='dim')
 parser.add_argument('--num-workers', type=int, default=0,
                     help='num_workers passed to train_loader')
 parser.add_argument('--tensorboard-dir', metavar='DIR',

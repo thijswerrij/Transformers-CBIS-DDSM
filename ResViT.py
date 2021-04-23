@@ -156,24 +156,24 @@ class Transformer(nn.Module):
      
 
 class ViTResNet(nn.Module):
-    def __init__(self, block, num_blocks, in_channels=3, num_classes=10, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100)):
+    def __init__(self, block, num_blocks, in_channels=3, out_channels=16, num_classes=10, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100)):
         super(ViTResNet, self).__init__()
-        self.in_planes = 16
+        self.in_planes = out_channels
         self.L = num_tokens
         self.cT = dim
         
-        self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.layer1 = self._make_layer(block, 16, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 32, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 64, num_blocks[2], stride=2) #8x8 feature maps (64 in total)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.layer1 = self._make_layer(block, out_channels, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, out_channels*2, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, out_channels*4, num_blocks[2], stride=2) #8x8 feature maps (64 in total)
         self.apply(_weights_init)
         
         
         # Tokenization
-        self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, 64),requires_grad = True) #Tokenization parameters
+        self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, out_channels*4),requires_grad = True) #Tokenization parameters
         torch.nn.init.xavier_uniform_(self.token_wA)
-        self.token_wV = nn.Parameter(torch.empty(batch_size[1],64,self.cT),requires_grad = True) #Tokenization parameters
+        self.token_wV = nn.Parameter(torch.empty(batch_size[1],out_channels*4,self.cT),requires_grad = True) #Tokenization parameters
         torch.nn.init.xavier_uniform_(self.token_wV)        
              
         
