@@ -13,26 +13,57 @@ from torch import nn
 import PIL
 from einops import rearrange
 
-from ResViT import ViTResNet, BasicBlock
+from ResViT import Transformer
 from torchvision.models import resnet18
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #%%
 
-class PretrainedViTResNet(ViTResNet):
-    def __init__(self, pretrained=True, *args, **kwargs):
-        super().__init__(BasicBlock, [3, 3, 3], *args, **kwargs)
+import torch.nn.init as init
+
+def _weights_init(m):
+    classname = m.__class__.__name__
+    #print(classname)
+    if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+        init.kaiming_normal_(m.weight)
+
+class PretrainedViTResNet(nn.Module):
+    def __init__(self, in_channels=3, num_classes=10, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100), pretrained=True):
+        #super().__init__(BasicBlock, [3, 3, 3], *args, **kwargs)
+        super(PretrainedViTResNet, self).__init__()
+        
+        self.in_planes = 16
+        self.L = num_tokens
+        self.cT = dim
         
         resnet = resnet18(pretrained=pretrained, progress=False).to(device)
         modules = list(resnet.children())[:-1]
         self.resnet = nn.Sequential(*modules)
+        self.apply(_weights_init)
         
         # Tokenization
         self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, 512),requires_grad = True) #Tokenization parameters
         torch.nn.init.xavier_uniform_(self.token_wA)
         self.token_wV = nn.Parameter(torch.empty(batch_size[1],512,self.cT),requires_grad = True) #Tokenization parameters
-        torch.nn.init.xavier_uniform_(self.token_wV) 
+        torch.nn.init.xavier_uniform_(self.token_wV)        
+             
+        
+        self.pos_embedding = nn.Parameter(torch.empty(1, (num_tokens + 1), dim))
+        torch.nn.init.normal_(self.pos_embedding, std = .02) # initialized based on the paper
+
+        #self.patch_conv= nn.Conv2d(64,dim, self.patch_size, stride = self.patch_size) 
+
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, dim)) #initialized based on the paper
+        self.dropout = nn.Dropout(emb_dropout)
+
+        self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
+
+        self.to_cls_token = nn.Identity()
+
+        self.nn1 = nn.Linear(dim, num_classes)  # if finetuning, just use a linear layer without further hidden layers (paper)
+        torch.nn.init.xavier_uniform_(self.nn1.weight)
+        torch.nn.init.normal_(self.nn1.bias, std = 1e-6)
         
     def forward(self, img, mask = None):
         x = self.resnet(img)
@@ -109,10 +140,10 @@ if __name__ == "__main__":
     batch_size = (args.batch_size_train, args.batch_size_val)
     
     # List of arguments
-    num_tokens = 8         # number of tokens used in transformer step
-    depth = 6              # number of transformer layers
+    num_tokens = args.num_tokens    # number of tokens used in transformer step
+    depth = args.transform_depth    # number of transformer layers
     
-    model = PretrainedViTResNet(pretrained=pretrained, in_channels=3, num_classes=categories, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    model = PretrainedViTResNet(pretrained=pretrained, num_classes=categories, dim=args.dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
