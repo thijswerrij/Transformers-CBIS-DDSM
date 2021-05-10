@@ -38,7 +38,7 @@ def _weights_init(m):
         init.kaiming_normal_(m.weight)
 
 class PretrainedViTResNet(nn.Module):
-    def __init__(self, in_channels=3, num_classes=10, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100), pretrained=True):
+    def __init__(self, in_channels=3, num_classes=3, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100), pretrained=True):
         #super().__init__(BasicBlock, [3, 3, 3], *args, **kwargs)
         super(PretrainedViTResNet, self).__init__()
         
@@ -47,14 +47,16 @@ class PretrainedViTResNet(nn.Module):
         self.cT = dim
         
         resnet = resnet18(pretrained=pretrained, progress=False).to(device)
-        modules = list(resnet.children())[:-1]
-        self.resnet = nn.Sequential(*modules)
-        self.apply(_weights_init)
+        modules = list(resnet.children())
+        self.resnet = nn.Sequential(*modules[:-2])
+        #self.final = modules[-2:]
+        #self.apply(_weights_init)
+        outsize = 512
         
         # Tokenization
-        self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, 512),requires_grad = True) #Tokenization parameters
+        self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, outsize),requires_grad = True) #Tokenization parameters
         torch.nn.init.xavier_uniform_(self.token_wA)
-        self.token_wV = nn.Parameter(torch.empty(batch_size[1],512,self.cT),requires_grad = True) #Tokenization parameters
+        self.token_wV = nn.Parameter(torch.empty(batch_size[1],outsize,self.cT),requires_grad = True) #Tokenization parameters
         torch.nn.init.xavier_uniform_(self.token_wV)        
              
         
@@ -75,6 +77,7 @@ class PretrainedViTResNet(nn.Module):
         torch.nn.init.normal_(self.nn1.bias, std = 1e-6)
         
     def forward(self, img, mask = None):
+        
         x = self.resnet(img)
         
         x = rearrange(x, 'b c h w -> b (h w) c') # 64 vectors each with 64 points. These are the sequences or word vecotrs like in NLP
@@ -152,7 +155,7 @@ if __name__ == "__main__":
     num_tokens = args.num_tokens    # number of tokens used in transformer step
     depth = args.transform_depth    # number of transformer layers
     
-    model = PretrainedViTResNet(pretrained=pretrained, num_classes=categories, dim=args.dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    model = PretrainedViTResNet(pretrained=pretrained, num_classes=categories, dim=args.dim, mlp_dim=args.mlp_dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -162,6 +165,7 @@ if __name__ == "__main__":
         tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
         tensorboard_writer.add_text('args', json.dumps(vars(args)))
         tensorboard_writer.add_text('transform', str(transform))
+        #tensorboard_writer.add_text('model', str(model))
     else:
         tensorboard_writer = None
     

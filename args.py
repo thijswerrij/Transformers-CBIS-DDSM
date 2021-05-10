@@ -29,6 +29,8 @@ parser.add_argument('--transform-depth', metavar='N', type=int, default=6,
                     help='specifies the number transformer layers')
 parser.add_argument('--dim', metavar='N', type=int, default=128,
                     help='dim')
+parser.add_argument('--mlp-dim', metavar='N', type=int, default=256,
+                    help='mlp_dim')
 parser.add_argument('--num-workers', type=int, default=0,
                     help='num_workers passed to train_loader')
 parser.add_argument('--tensorboard-dir', metavar='DIR',

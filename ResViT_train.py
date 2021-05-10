@@ -23,7 +23,7 @@ from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-#%%
+#%% Set seed for experimenting; remove in final code
 
 import random
 import numpy as np
