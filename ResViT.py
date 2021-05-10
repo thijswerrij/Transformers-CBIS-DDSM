@@ -15,6 +15,17 @@ import torch.nn.init as init
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+#%% Set seed for experimenting; remove in final code
+
+import random
+import numpy as np
+
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
+
+#%%
+
 def _weights_init(m):
     classname = m.__class__.__name__
     #print(classname)
