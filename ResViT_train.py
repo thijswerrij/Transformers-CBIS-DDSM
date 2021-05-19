@@ -54,7 +54,7 @@ def plot(img):
 
 #%% Custom dataset (CBIS-DDSM)
 
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from imblearn.over_sampling import RandomOverSampler 
 
 # if is_binary = True, BENIGN and BENIGN_WITHOUT_CALLBACK are both assigned label 0
@@ -73,18 +73,18 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         
-        self.images, labels, self.bp_list = read_hdf5(file_name)
+        self.images, labels, bp_list = read_hdf5(file_name)
         
         if sample:
-            self.images, labels, self.bp_list = self.images[:sample], labels[:sample], self.bp_list[:sample]
+            self.images, labels, bp_list = self.images[:sample], labels[:sample], bp_list[:sample]
             
         
         #mean_val, std_val = self.images.mean(), self.images.std()
         #print(f"{file_name}\nmean: {mean_val}\nstd: {std_val}\n")
             
         if reorient:
-            for i in range(len(self.bp_list)):
-                if self.bp_list[i] == 'R':
+            for i in range(len(bp_list)):
+                if bp_list[i] == 'R':
                     self.images[i] = np.flip(self.images[i], axis=1)
         
         if binary:
@@ -110,6 +110,8 @@ class CBISDataset(Dataset):
             
         
         self.transform = transform
+        self.batch_size = batch_size
+        self.binary = binary
 
     def __len__(self):
         return len(self.labels)
@@ -130,6 +132,18 @@ class CBISDataset(Dataset):
         sample = (image, label)
 
         return sample
+        
+class CBISSubset(CBISDataset):
+    def __init__(self, dataset, ids, transform=None):
+        self.images, self.labels = dataset.images[ids], dataset.labels[ids]
+        
+        self.batch_size = dataset.batch_size
+        
+        if self.batch_size:
+            data_size = int(len(self.labels)/self.batch_size)*self.batch_size
+            self.images, self.labels = self.images[:data_size], self.labels[:data_size]
+            
+        self.transform = transform
     
 def get_mean_std(loader, non_zero=False):
     total_sum, total_squared_sum, num_batches = 0, 0, 0
@@ -153,7 +167,7 @@ def get_mean_std(loader, non_zero=False):
 
 #%%
 
-def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrices, epoch, binary=False, tensorboard_writer=None):
+def train(model, optimizer, data_loader, epoch, loss_history=[], acc_history=[], conf_matrices=[], auc_scores=[], binary=False, tensorboard_writer=None, tb_name="train"):
     total_samples = len(data_loader.dataset)
     model.train()
     minibatches = 0
@@ -196,17 +210,17 @@ def train(model, optimizer, data_loader, loss_history, acc_history, conf_matrice
     targets = np.concatenate(targets, axis=0)
     
     if tensorboard_writer:
-        tensorboard_writer.add_scalar('loss/train', avg_loss, epoch)
-        tensorboard_writer.add_scalar('accuracy/train', accuracy, epoch)
-        tensorboard_writer.add_figure('confmat/train', util.plot_confmat(conf_mat), epoch)
+        tensorboard_writer.add_scalar(f'loss/{tb_name}', avg_loss, epoch)
+        tensorboard_writer.add_scalar(f'accuracy/{tb_name}', accuracy, epoch)
+        tensorboard_writer.add_figure(f'confmat/{tb_name}', util.plot_confmat(conf_mat), epoch)
     
         if binary:
-            tensorboard_writer.add_scalar('auc_roc/train', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
-            tensorboard_writer.add_figure('roc/train', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
+            tensorboard_writer.add_scalar(f'auc_roc/{tb_name}', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
+            tensorboard_writer.add_figure(f'roc/{tb_name}', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
     
     return outputs, targets
             
-def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, epoch, binary=False, tensorboard_writer=None):
+def evaluate(model, data_loader, epoch, loss_history=[], acc_history=[], conf_matrices=[], auc_scores=[], binary=False, tensorboard_writer=None, tb_name="test"):
     model.eval()
     
     total_samples = len(data_loader.dataset)
@@ -247,15 +261,77 @@ def evaluate(model, data_loader, loss_history, acc_history, conf_matrices, epoch
     targets = np.concatenate(targets, axis=0)
     
     if tensorboard_writer:
-        tensorboard_writer.add_scalar('loss/test', avg_loss, epoch)
-        tensorboard_writer.add_scalar('accuracy/test', accuracy, epoch)
-        tensorboard_writer.add_figure('confmat/test', util.plot_confmat(conf_mat), epoch)
+        tensorboard_writer.add_scalar(f'loss/{tb_name}', avg_loss, epoch)
+        tensorboard_writer.add_scalar(f'accuracy/{tb_name}', accuracy, epoch)
+        tensorboard_writer.add_figure(f'confmat/{tb_name}', util.plot_confmat(conf_mat), epoch)
     
         if binary:
-            tensorboard_writer.add_scalar('auc_roc/test', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
-            tensorboard_writer.add_figure('roc/test', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
+            roc_auc_score = sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1])
+            auc_scores.append(roc_auc_score)
+            tensorboard_writer.add_scalar(f'auc_roc/{tb_name}', roc_auc_score, epoch)
+            tensorboard_writer.add_figure(f'roc/{tb_name}', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
     
     return outputs, targets
+
+#%%
+
+from sklearn.model_selection import KFold
+
+def run(model, optimizer, train_loader, test_loader, epochs, binary, tensorboard_writer=None):
+    train_loss_history, test_loss_history = [], []
+    train_acc_history, test_acc_history = [], []
+    train_conf_matrices, test_conf_matrices = [], []
+    train_auc_scores, test_auc_scores = [], []
+    
+    for epoch in range(1, epochs + 1):
+        print('Epoch:', epoch)
+        start_time = time.time()
+        train_predict, train_target = train(model, optimizer, train_loader, epoch, train_loss_history, train_acc_history, train_conf_matrices, train_auc_scores, binary, tensorboard_writer)
+        print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
+        eval_predict, eval_target = evaluate(model, test_loader, epoch, test_loss_history, test_acc_history, test_conf_matrices, test_auc_scores, binary, tensorboard_writer)
+
+        if tensorboard_writer:
+            tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
+
+def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs, transform, binary, tensorboard_writer=None):
+    kfold = KFold(n_splits=k_folds, shuffle=True)
+    
+    print(f"{k_folds}-folds cross-validation")
+    
+    train_loss_history, eval_loss_history, test_loss_history = [], [], []
+    train_acc_history, eval_acc_history, test_acc_history = [], [], []
+    train_conf_matrices, eval_conf_matrices, test_conf_matrices = [], [], []
+    train_auc_scores, eval_auc_scores, test_auc_scores = [], [], []
+    
+    for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset)):
+        print('Fold', fold)
+        
+        train_fold = CBISSubset(train_dataset, train_ids, transform['train'])
+        val_fold = CBISSubset(train_dataset, test_ids, transform['val'])
+        
+        train_loader = DataLoader(train_fold, batch_size=train_fold.batch_size, shuffle=True)
+        eval_loader = DataLoader(val_fold, batch_size=val_fold.batch_size, shuffle=False)
+        
+        for epoch in range(1, epochs + 1):
+            print('Epoch:', epoch)
+            start_time = time.time()
+            train_predict, train_target = train(model, optimizer, train_loader, epoch, train_loss_history, train_acc_history, train_conf_matrices, train_auc_scores, binary, tensorboard_writer, f"fold {fold} train")
+            print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
+            eval_predict, eval_target = evaluate(model, eval_loader, epoch, eval_loss_history, eval_acc_history, eval_conf_matrices, eval_auc_scores, binary, tensorboard_writer, f"fold {fold} eval")
+            
+            print("Testing:")
+            test_predict, test_target = evaluate(model, test_loader, epoch, test_loss_history, test_acc_history, test_conf_matrices, test_auc_scores, binary, tensorboard_writer, f"fold {fold} test")
+            if tensorboard_writer:
+                tensorboard_writer.add_scalar(f"time per epoch/fold {fold}", time.time() - start_time, epoch)
+    
+    score_i = np.argmax(eval_auc_scores)
+    best_score_str = (f"AUC: {eval_auc_scores[score_i]}  \nEpoch {score_i}  \n"
+    f"Test accuracy: {test_acc_history[score_i]}  \nTest loss: {test_loss_history[score_i]}")
+    print(best_score_str)
+    
+    if tensorboard_writer:
+        tensorboard_writer.add_text('Best AUC', best_score_str)
+        
 
 #%% Transform
 
@@ -320,18 +396,10 @@ if __name__ == "__main__":
         tensorboard_writer = None
     
     init_time = time.time()
-    train_loss_history, test_loss_history = [], []
-    train_acc_history, test_acc_history = [], []
-    train_conf_matrices, test_conf_matrices = [], []
-    for epoch in range(1, args.epochs + 1):
-        print('Epoch:', epoch)
-        start_time = time.time()
-        train_predict, train_target = train(model, optimizer, train_loader, train_loss_history, train_acc_history, train_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
-        print('Execution time:', '{:5.2f}'.format(time.time() - start_time), 'seconds')
-        eval_predict, eval_target = evaluate(model, test_loader, test_loss_history, test_acc_history, test_conf_matrices, epoch, args.binary_classification, tensorboard_writer)
-        
-        if tensorboard_writer:
-            tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
+    if args.cross_val < 1:
+        run(model, optimizer, train_loader, test_loader, args.epochs, args.binary_classification, tensorboard_writer)
+    else:
+        cross_validate(model, optimizer, train_dataset, test_loader, args.cross_val, args.epochs, transform, args.binary_classification, tensorboard_writer)
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
