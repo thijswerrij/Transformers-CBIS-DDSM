@@ -11,9 +11,9 @@ import torch
 import torchvision
 import torch.utils.tensorboard
 from torchvision.models import resnet18
-
 import os
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
+#os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -64,8 +64,8 @@ if __name__ == "__main__":
     print(vargs)
     print()
 
-    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample)
-    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False)
+    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, bp_filter=args.filter)
+    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, bp_filter=args.filter)
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)

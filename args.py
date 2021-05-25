@@ -23,6 +23,10 @@ parser.add_argument('--reorient-train', action='store_true',
                     help='reorient all images in the same direction')
 parser.add_argument('--reorient-val', action='store_true',
                     help='reorient all images in the same direction')
+parser.add_argument('--filter', metavar='N', type=str, default="",
+                    help='Available filters: L, R, LEFT, RIGHT, CC, MLO.'
+                    'Difference between L/R and LEFT/RIGHT is that the former is calculated,'
+                    'while the latter was included in the dataset and might include errors')
 parser.add_argument('--num-tokens', metavar='N', type=int, default=16,
                     help='specifies the number of tokens used by transformer')
 parser.add_argument('--transform-depth', metavar='N', type=int, default=6,

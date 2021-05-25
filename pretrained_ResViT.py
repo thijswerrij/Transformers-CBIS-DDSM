@@ -12,6 +12,7 @@ import torchvision
 from torch import nn
 import PIL
 from einops import rearrange
+import os
 
 from ResViT import Transformer
 from torchvision.models import resnet18
@@ -140,8 +141,8 @@ if __name__ == "__main__":
     print(vargs)
     print()
 
-    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample)
-    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False)
+    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, bp_filter=args.filter)
+    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, bp_filter=args.filter)
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)
@@ -178,3 +179,12 @@ if __name__ == "__main__":
         
     minutes, seconds = divmod(time.time() - init_time, 60)
     print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
+    
+#%% Save model
+
+    if type(args.model) is str:
+        
+        if not os.path.exists(args.model):
+            os.makedirs(args.model)
+        
+        torch.save(model.state_dict(), f"{args.model}/model.pt")

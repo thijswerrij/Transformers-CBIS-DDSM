@@ -13,9 +13,9 @@ import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import util
-
 import os
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+
+#os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 #import sys
 #sys.path.append('../VisualTransformers')
@@ -54,7 +54,7 @@ def plot(img):
 
 #%% Custom dataset (CBIS-DDSM)
 
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, DataLoader
 from imblearn.over_sampling import RandomOverSampler 
 
 # if is_binary = True, BENIGN and BENIGN_WITHOUT_CALLBACK are both assigned label 0
@@ -64,7 +64,7 @@ label_to_bin = { 'BENIGN': 0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT' : 1 }
 class CBISDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, file_name, batch_size=None, transform=None, binary=False, reorient=False, sample=None, oversample=False):
+    def __init__(self, file_name, batch_size=None, transform=None, binary=False, reorient=False, sample=None, oversample=False, bp_filter=""):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -74,6 +74,19 @@ class CBISDataset(Dataset):
         """
         
         self.images, labels, bp_list = read_hdf5(file_name)
+        bp_list = np.array(bp_list) # bp_list[i] e.g. ['L', 'LEFT', 'MLO']
+        
+        filtered = None
+        if bp_filter == "L" or bp_filter == "R":
+            filtered = bp_list[:,0] == bp_filter
+        elif bp_filter == "LEFT" or bp_filter == "RIGHT":
+            filtered = bp_list[:,1] == bp_filter
+        elif bp_filter == "CC" or bp_filter == "MLO":
+            filtered = bp_list[:,2] == bp_filter
+        
+        if filtered is not None:
+            self.images, labels, bp_list = self.images[filtered], labels[filtered], bp_list[filtered]
+            print(f"Filtered on {bp_filter}")
         
         if sample:
             self.images, labels, bp_list = self.images[:sample], labels[:sample], bp_list[:sample]
@@ -84,7 +97,7 @@ class CBISDataset(Dataset):
             
         if reorient:
             for i in range(len(bp_list)):
-                if bp_list[i] == 'R':
+                if bp_list[i][0] == 'R':
                     self.images[i] = np.flip(self.images[i], axis=1)
         
         if binary:
@@ -209,13 +222,17 @@ def train(model, optimizer, data_loader, epoch, loss_history=[], acc_history=[],
     outputs = np.concatenate(outputs, axis=0)
     targets = np.concatenate(targets, axis=0)
     
+    if binary:
+        roc_auc_score = sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1])
+        auc_scores.append(roc_auc_score)
+    
     if tensorboard_writer:
         tensorboard_writer.add_scalar(f'loss/{tb_name}', avg_loss, epoch)
         tensorboard_writer.add_scalar(f'accuracy/{tb_name}', accuracy, epoch)
         tensorboard_writer.add_figure(f'confmat/{tb_name}', util.plot_confmat(conf_mat), epoch)
     
         if binary:
-            tensorboard_writer.add_scalar(f'auc_roc/{tb_name}', sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1]), epoch)
+            tensorboard_writer.add_scalar(f'auc_roc/{tb_name}', roc_auc_score, epoch)
             tensorboard_writer.add_figure(f'roc/{tb_name}', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
     
     return outputs, targets
@@ -260,14 +277,16 @@ def evaluate(model, data_loader, epoch, loss_history=[], acc_history=[], conf_ma
     outputs = np.concatenate(outputs, axis=0)
     targets = np.concatenate(targets, axis=0)
     
+    if binary:
+        roc_auc_score = sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1])
+        auc_scores.append(roc_auc_score)
+    
     if tensorboard_writer:
         tensorboard_writer.add_scalar(f'loss/{tb_name}', avg_loss, epoch)
         tensorboard_writer.add_scalar(f'accuracy/{tb_name}', accuracy, epoch)
         tensorboard_writer.add_figure(f'confmat/{tb_name}', util.plot_confmat(conf_mat), epoch)
     
         if binary:
-            roc_auc_score = sklearn.metrics.roc_auc_score(targets == 1, outputs[:, 1])
-            auc_scores.append(roc_auc_score)
             tensorboard_writer.add_scalar(f'auc_roc/{tb_name}', roc_auc_score, epoch)
             tensorboard_writer.add_figure(f'roc/{tb_name}', util.plot_roc_curve(targets == 1, outputs[:, 1]), epoch)
     
@@ -324,13 +343,14 @@ def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs
             if tensorboard_writer:
                 tensorboard_writer.add_scalar(f"time per epoch/fold {fold}", time.time() - start_time, epoch)
     
-    score_i = np.argmax(eval_auc_scores)
-    best_score_str = (f"AUC: {eval_auc_scores[score_i]}  \nEpoch {score_i}  \n"
-    f"Test accuracy: {test_acc_history[score_i]}  \nTest loss: {test_loss_history[score_i]}")
-    print(best_score_str)
-    
-    if tensorboard_writer:
-        tensorboard_writer.add_text('Best AUC', best_score_str)
+    if binary:
+        score_i = np.argmax(eval_auc_scores)
+        best_score_str = (f"AUC: {eval_auc_scores[score_i]}  \nEpoch {score_i}  \n"
+        f"Test accuracy: {test_acc_history[score_i]}  \nTest loss: {test_loss_history[score_i]}")
+        print(best_score_str)
+        
+        if tensorboard_writer:
+            tensorboard_writer.add_text('Best AUC', best_score_str)
         
 
 #%% Transform
@@ -364,8 +384,8 @@ if __name__ == "__main__":
     print(vargs)
     print()
     
-    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, reorient=args.reorient_train)
-    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, reorient=args.reorient_val)
+    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, reorient=args.reorient_train, bp_filter=args.filter)
+    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, reorient=args.reorient_val, bp_filter=args.filter)
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)

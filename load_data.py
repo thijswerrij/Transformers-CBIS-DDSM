@@ -14,7 +14,7 @@ import PIL
 import pandas as pd
 import h5py
 
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from time import sleep
 
 import sys
@@ -117,24 +117,24 @@ def compute_patch_offset(centroid, patch_size, image_size):
     offset = min(offset, image_size - patch_size)
     return offset
 
-def get_crops(path_list):
+def get_crops(path_list, direction):
     crops = []
     bp_list = []
     
     print("Loading images and computing crops...\n")
     sleep(0.2)
-    for paths in tqdm(path_list):
-        path = paths[0]
+    for i in trange(len(path_list)):
+        path = path_list[i][0]
         ds = get_image(os.path.join(images_path, path.strip()))
         
         pixel_array = ds.pixel_array
         
         # check which side of the image has highest values for direction
         if np.sum(pixel_array[:,0:5]) > np.sum(pixel_array[:,-5:-1]):
-            bp = 'L'
+            bp = "L"
         else:
-            bp = 'R'
-        bp_list.append(bp)
+            bp = "R"
+        bp_list.append([bp, direction[i][0], direction[i][1]])
         
         cropped = crop_img_from_largest_connected(pixel_array, image_orientation('NO', bp))
         y_min, y_max, x_min, x_max = cropped[0]
@@ -249,14 +249,14 @@ if __name__ == "__main__":
                 use_existing_file = False
             
         if not use_existing_file:
-            crops, bp_list = get_crops(path_list)
+            crops, bp_list = get_crops(path_list, direction)
             
             with h5py.File(crop_filename,'w') as f:
                 crop_set = f.create_dataset(
                     "crops", crops.shape, data=crops
                 )
                 bp_set = f.create_dataset(
-                    "bp", len(bp_list), data=bp_list
+                    "bp", (len(bp_list),3), data=bp_list
                 )
             
         
@@ -307,5 +307,5 @@ if __name__ == "__main__":
                 "meta", (labels.shape[0],1), data=labels.reshape(labels.shape[0],1)
             )
             bp_set = f.create_dataset(
-                "bp", len(bp_list), data=bp_list
+                "bp", (len(bp_list),3), data=bp_list
             )
