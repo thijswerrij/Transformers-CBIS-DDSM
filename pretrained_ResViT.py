@@ -39,7 +39,7 @@ def _weights_init(m):
         init.kaiming_normal_(m.weight)
 
 class PretrainedViTResNet(nn.Module):
-    def __init__(self, in_channels=3, num_classes=3, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100), pretrained=True):
+    def __init__(self, in_channels=3, num_classes=3, dim = 128, num_tokens = 8, mlp_dim = 256, heads = 8, depth = 6, emb_dropout = 0.1, dropout= 0.1, batch_size=(100,100), pretrained=True, remove_last_block=False):
         #super().__init__(BasicBlock, [3, 3, 3], *args, **kwargs)
         super(PretrainedViTResNet, self).__init__()
         
@@ -49,10 +49,14 @@ class PretrainedViTResNet(nn.Module):
         
         resnet = resnet18(pretrained=pretrained, progress=False).to(device)
         modules = list(resnet.children())
-        self.resnet = nn.Sequential(*modules[:-2])
+        if remove_last_block: # original paper replaces last BasicBlock with VT modules; if remove_last_block = True, last BB is removed
+            self.resnet = nn.Sequential(*modules[:-3])
+            outsize = 256
+        else:
+            self.resnet = nn.Sequential(*modules[:-2])
+            outsize = 512
         #self.final = modules[-2:]
         #self.apply(_weights_init)
-        outsize = 512
         
         # Tokenization
         self.token_wA = nn.Parameter(torch.empty(batch_size[0],self.L, outsize),requires_grad = True) #Tokenization parameters
@@ -136,6 +140,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--no-pretrain', action='store_true',
                         help='do not use pretraining (pretrained ResNet is used by default)')
+    parser.add_argument('--remove-last-block', action='store_true',
+                        help='ResNet uses four BasicBlocks by default; if set to true, the last BB is removed, with 3 BBs remaining')
+    
     args = parser.parse_args()
     vargs = vars(args)
     print(vargs)
@@ -157,7 +164,7 @@ if __name__ == "__main__":
     num_tokens = args.num_tokens    # number of tokens used in transformer step
     depth = args.transform_depth    # number of transformer layers
     
-    model = PretrainedViTResNet(pretrained=pretrained, num_classes=categories, dim=args.dim, mlp_dim=args.mlp_dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
+    model = PretrainedViTResNet(pretrained=pretrained, num_classes=categories, dim=args.dim, mlp_dim=args.mlp_dim, num_tokens=num_tokens, depth=depth, remove_last_block=args.remove_last_block, batch_size=batch_size).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
@@ -167,7 +174,8 @@ if __name__ == "__main__":
         tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
         tensorboard_writer.add_text('args', json.dumps(vars(args)))
         tensorboard_writer.add_text('transform', str(transform))
-        #tensorboard_writer.add_text('model', str(model))
+        #img_shape = train_dataset[0][0].shape
+        #tensorboard_writer.add_graph(model, torch.zeros((batch_size[0],) + img_shape))
     else:
         tensorboard_writer = None
     
