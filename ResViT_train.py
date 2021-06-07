@@ -311,6 +311,9 @@ def run(model, optimizer, train_loader, test_loader, epochs, binary, tensorboard
 
         if tensorboard_writer:
             tensorboard_writer.add_scalar('time per epoch', time.time() - start_time, epoch)
+            
+    if tensorboard_writer:
+        tensorboard_writer.close()
 
 def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs, transform, binary, tensorboard_writer=None):
     kfold = KFold(n_splits=k_folds, shuffle=True)
@@ -321,6 +324,7 @@ def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs
     train_acc_history, eval_acc_history, test_acc_history = [], [], []
     train_conf_matrices, eval_conf_matrices, test_conf_matrices = [], [], []
     train_auc_scores, eval_auc_scores, test_auc_scores = [], [], []
+    best_auc_score_ids = []
     
     for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset)):
         print('Fold', fold)
@@ -342,15 +346,20 @@ def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs
             test_predict, test_target = evaluate(model, test_loader, epoch, test_loss_history, test_acc_history, test_conf_matrices, test_auc_scores, binary, tensorboard_writer, f"fold {fold} test")
             if tensorboard_writer:
                 tensorboard_writer.add_scalar(f"time per epoch/fold {fold}", time.time() - start_time, epoch)
-    
-    if binary:
-        score_i = np.argmax(eval_auc_scores)
-        best_score_str = (f"AUC: {eval_auc_scores[score_i]}  \nEpoch {score_i}  \n"
-        f"Test accuracy: {test_acc_history[score_i]}  \nTest loss: {test_loss_history[score_i]}")
-        print(best_score_str)
-        
-        if tensorboard_writer:
-            tensorboard_writer.add_text('Best AUC', best_score_str)
+            
+        if binary:
+            best_score_this_fold = np.argmax(eval_auc_scores[-epochs:]) + epochs*fold
+            best_auc_score_ids.append(best_score_this_fold)
+            best_score_str = (f"Fold {fold}:  \nAUC: {eval_auc_scores[best_score_this_fold]}  \nEpoch {best_score_this_fold+1}  \n"
+            f"Test accuracy: {test_acc_history[best_score_this_fold]}  \nTest loss: {test_loss_history[best_score_this_fold]}  \n  \n")
+            print(best_score_str)
+            if tensorboard_writer:
+                tensorboard_writer.add_scalar('loss/best test per fold', test_loss_history[best_score_this_fold], fold)
+                tensorboard_writer.add_scalar('accuracy/best test per fold', test_acc_history[best_score_this_fold], fold)
+                tensorboard_writer.add_text('best eval per fold', best_score_str, fold)
+                
+    if tensorboard_writer:
+        tensorboard_writer.close()
         
 
 #%% Transform
