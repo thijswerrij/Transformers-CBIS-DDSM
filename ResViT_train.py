@@ -44,8 +44,9 @@ def read_hdf5(file_name):
         images = np.array(file["/images"]).astype('float32')
         labels = np.array(file["/meta"]).astype("str")
         bp = np.array(file["/bp"]).astype("str")
+        patient_ids = np.array(file["/patient_id"]).astype("str")
     
-    return images, labels, bp
+    return images, labels, bp, patient_ids
 
 def plot(img):
     # plot the image using matplotlib
@@ -73,8 +74,9 @@ class CBISDataset(Dataset):
                 on a sample.
         """
         
-        self.images, labels, bp_list = read_hdf5(file_name)
+        self.images, labels, bp_list, patient_ids = read_hdf5(file_name)
         bp_list = np.array(bp_list) # bp_list[i] e.g. ['L', 'LEFT', 'MLO']
+        patient_ids = np.array([i[0] for i in patient_ids])
         
         filtered = None
         if bp_filter == "L" or bp_filter == "R":
@@ -85,12 +87,11 @@ class CBISDataset(Dataset):
             filtered = bp_list[:,2] == bp_filter
         
         if filtered is not None:
-            self.images, labels, bp_list = self.images[filtered], labels[filtered], bp_list[filtered]
+            self.images, labels, bp_list, patient_ids = self.images[filtered], labels[filtered], bp_list[filtered], patient_ids[filtered]
             print(f"Filtered on {bp_filter}")
         
         if sample:
-            self.images, labels, bp_list = self.images[:sample], labels[:sample], bp_list[:sample]
-            
+            self.images, labels, bp_list, patient_ids = self.images[:sample], labels[:sample], bp_list[:sample], patient_ids[:sample]
         
         #mean_val, std_val = self.images.mean(), self.images.std()
         #print(f"{file_name}\nmean: {mean_val}\nstd: {std_val}\n")
@@ -108,19 +109,27 @@ class CBISDataset(Dataset):
         if not sample:
             if oversample:
                 print(f"Labels before oversampling - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}")
-                img_shape = self.images.shape
-                self.images = self.images.reshape(img_shape[0], img_shape[1]*img_shape[2])
+                #img_shape = self.images.shape
+                #self.images = self.images.reshape(img_shape[0], img_shape[1]*img_shape[2])
                 ros = RandomOverSampler(random_state=42)
-                self.images, self.labels = ros.fit_resample(self.images, self.labels)
-                self.images = self.images.reshape(self.images.shape[0], img_shape[1], img_shape[2])
+                #self.images, self.labels = ros.fit_resample(self.images, self.labels)
+                
+                # very hacky way to do this, but I didn't see an alternative because it needs to include patient ids
+                resampled_ids, self.labels = ros.fit_resample([[i] for i in range(len(self.images))], self.labels)
+                
+                self.images = np.array([self.images[i[0]] for i in resampled_ids])
+                patient_ids = np.array([patient_ids[i[0]] for i in resampled_ids])
+                
+                #self.images = self.images.reshape(self.images.shape[0], img_shape[1], img_shape[2])
                 
             if batch_size:
                 data_size = int(len(self.labels)/batch_size)*batch_size
-                self.images, self.labels = self.images[:data_size], self.labels[:data_size]
+                self.images, self.labels, patient_ids = self.images[:data_size], self.labels[:data_size], patient_ids[:data_size]
             
             if oversample:
                 print(f"Final label distribution - 0: {sum(self.labels==0)}, 1: {sum(self.labels==1)}, 2: {sum(self.labels==2)}\n")
             
+        self.patient_ids = patient_ids
         
         self.transform = transform
         self.batch_size = batch_size
@@ -294,7 +303,7 @@ def evaluate(model, data_loader, epoch, loss_history=[], acc_history=[], conf_ma
 
 #%%
 
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, GroupKFold
 
 def run(model, optimizer, train_loader, test_loader, epochs, binary, tensorboard_writer=None):
     train_loss_history, test_loss_history = [], []
@@ -316,7 +325,8 @@ def run(model, optimizer, train_loader, test_loader, epochs, binary, tensorboard
         tensorboard_writer.close()
 
 def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs, transform, binary, tensorboard_writer=None):
-    kfold = KFold(n_splits=k_folds, shuffle=True)
+    #kfold = KFold(n_splits=k_folds, shuffle=True)
+    kfold = GroupKFold(n_splits=k_folds) # added to ensure that patients do not show up in both training and validation sets
     
     print(f"{k_folds}-folds cross-validation")
     
@@ -326,7 +336,7 @@ def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs
     train_auc_scores, eval_auc_scores, test_auc_scores = [], [], []
     best_auc_score_ids = []
     
-    for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset)):
+    for fold, (train_ids, test_ids) in enumerate(kfold.split(train_dataset,groups=train_dataset.patient_ids)):
         print('Fold', fold)
         
         train_fold = CBISSubset(train_dataset, train_ids, transform['train'])

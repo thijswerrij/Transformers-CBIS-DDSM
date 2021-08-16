@@ -39,10 +39,12 @@ def read_csv(path, sample=None):
     
     direction = data[['left or right breast', 'image view']].values
     
+    patient_ids = data['patient_id']
+    
     if sample and sample>0:
-        img_paths, labels, direction = img_paths[:sample], labels[:sample], direction[:sample]
+        img_paths, labels, direction, patient_ids = img_paths[:sample], labels[:sample], direction[:sample], patient_ids[:sample]
                     
-    return img_paths, labels, direction
+    return img_paths, labels, direction, patient_ids
 
 def get_image(path):
     return dcmread(path)
@@ -69,9 +71,11 @@ def display_data(ds, plot=True):
     if (plot):
         plot(ds.pixel_array)
         
-def plot(img):
+def plot(img, save=False):
     # plot the image using matplotlib
     plt.imshow(img, cmap=plt.cm.gray)
+    if save:
+        plt.imsave(f"tmp/{save}.png", img, format="png", cmap=plt.cm.gray)
     plt.show()
     
 def plot_multiple(images, size=None):
@@ -228,7 +232,7 @@ if __name__ == "__main__":
     #file_name = "calc_case_description_train_set"
     file_name = "mass_case_description_test_set"
     
-    path_list, labels, direction = read_csv(f"{file_name}.csv", sample=sample)
+    path_list, labels, direction, patient_ids = read_csv(f"{file_name}.csv", sample=sample)
     
     sample_name = '' if sample is None else f"{sample}_sample_"
     
@@ -257,6 +261,9 @@ if __name__ == "__main__":
                 )
                 bp_set = f.create_dataset(
                     "bp", (len(bp_list),3), data=bp_list
+                )
+                patient_id_set = f.create_dataset(
+                    "patient_id", (len(patient_ids),1), data=list(patient_ids)
                 )
             
         
@@ -308,4 +315,7 @@ if __name__ == "__main__":
             )
             bp_set = f.create_dataset(
                 "bp", (len(bp_list),3), data=bp_list
+            )
+            patient_id_set = f.create_dataset(
+                "patient_id", (len(patient_ids),1), data=list(patient_ids)
             )
