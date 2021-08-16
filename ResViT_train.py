@@ -23,15 +23,6 @@ from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-#%% Set seed for experimenting; remove in final code
-
-import random
-import numpy as np
-
-torch.manual_seed(0)
-random.seed(0)
-np.random.seed(0)
-
 #%% Load hdf5
 
 import h5py
