@@ -24,14 +24,10 @@ from src.cropping.crop_mammogram import crop_img_from_largest_connected, image_o
 #fpath = get_testdata_file()
 #ds = dcmread("1-1.dcm")
 
-csv_path = "data/"
-h5_path = "data/"
-images_path = "D:/CBIS-DDSM/"
-
 #%%
 
-def read_csv(path, sample=None):
-    data = pd.read_csv(csv_path + path)
+def read_csv(csv_path, sample=None):
+    data = pd.read_csv(csv_path)
     
     img_paths = data[['image file path','cropped image file path','ROI mask file path']].values
     
@@ -224,25 +220,54 @@ def get_images_and_resize(path_list, img_scale=1, img_size=None, crops=False, pe
 
 #%%
 
+import argparse
+
 if __name__ == "__main__":
-    to_crop = True
-    use_existing_file = True
-    sample = None
     
-    #file_name = "calc_case_description_train_set"
-    file_name = "mass_case_description_test_set"
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--file', metavar='CSV', required=True,
+                        #default="data/mass_case_description_train_set.csv",
+                        help='CSV file you want to load (e.g. "data/mass_case_description_train_set.csv")')
+    parser.add_argument('--images-path', metavar='DIR', required=True,
+                        #default="D:/CBIS-DDSM",
+                        help='Folder where your CBIS-DDSM files are stored (e.g. "D:/CBIS-DDSM")')
+    parser.add_argument('--sample', metavar='N', type=int, default=0,
+                        help='sample size, is ignored when <= 0')
+    parser.add_argument('--scale', metavar='N', type=float, default=0.1,
+                        help='scale used for rescaling images (default 0.1)')
+    parser.add_argument('--percentile', metavar='N', type=int, default=90,
+                        help='percentile used when selecting the general crop (default 90%)')
+    parser.add_argument('--no-cropping', action='store_true',
+                        help='do not use cropping (cropping is used by default)')
+    parser.add_argument('--overwrite-crops', action='store_true',
+                        help='create new crops, even if crop file already exists')
     
-    path_list, labels, direction, patient_ids = read_csv(f"{file_name}.csv", sample=sample)
+    args = parser.parse_args()
+    vargs = vars(args)
+    print(vargs)
+    print()
+    
+    csv_path    = args.file
+    images_path = args.images_path
+    
+    to_crop             = not args.no_cropping
+    use_existing_file   = not args.overwrite_crops
+    sample              = args.sample if args.sample > 0 else None
+    
+    simple_file_name = csv_path.split("/")[-1][:-4] # e.g. "mass_case_description_test_set"
+    
+    path_list, labels, direction, patient_ids = read_csv(csv_path, sample=sample)
     
     sample_name = '' if sample is None else f"{sample}_sample_"
     
     if to_crop:
-        crops_folder_name = f"{h5_path}crops/"
+        crops_folder_name = os.path.join("data/crops/")
         
         if not os.path.exists(crops_folder_name):
             os.makedirs(crops_folder_name)
         
-        crop_filename = f"{crops_folder_name}{sample_name}{file_name}.h5"
+        crop_filename = f"{crops_folder_name}{sample_name}{simple_file_name}.h5"
         
         if use_existing_file:
             try:
@@ -269,19 +294,16 @@ if __name__ == "__main__":
         
     #%%
     
-    percentile = 90
-    img_scale = 1
-    img_scale = 0.1
-    img_size = None
-    #img_size = (180,180)
+    percentile  = args.percentile
+    img_scale   = args.scale
+    
     include_files=[True,False,False]
-    #normalize = None
-    normalize = (12513.3505859375, 16529.138671875)
+    normalize = (12513.3505859375, 16529.138671875) # values used to normalize images
     
     if to_crop:
-        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, crops=crops, percentile=percentile, include_files=include_files, normalize=normalize)
+        images = get_images_and_resize(path_list, img_scale=img_scale, crops=crops, percentile=percentile, include_files=include_files, normalize=normalize)
     else:
-        images = get_images_and_resize(path_list, img_scale=img_scale, img_size=img_size, include_files=include_files, normalize=normalize)
+        images = get_images_and_resize(path_list, img_scale=img_scale, include_files=include_files, normalize=normalize)
     
     #plot_multiple(images[:], size=3)
     
@@ -289,20 +311,21 @@ if __name__ == "__main__":
     
     #%%
     
+    str_img_size = "_"
+    
     if img_scale != 1:
-        str_img_size = f"scaled_{img_scale}"
-    elif type(img_size) is tuple:
-        str_img_size = f"{img_size[0]}x{img_size[1]}"
-    elif type(img_size) is int:
-        str_img_size = str(img_size)
+        str_img_size += f"scaled_{img_scale}"
     if normalize:
         str_img_size += '_normalized'
     
     # Save images
+    h5_folder_name = "data/"
+    if not os.path.exists(h5_folder_name):
+        os.makedirs(h5_folder_name)
     if to_crop:
-        h5_filename = f"{h5_path}{file_name}_{str_img_size}_cropped.h5"
+        h5_filename = os.path.join(h5_folder_name, f"{simple_file_name}{str_img_size}_cropped.h5")
     else:
-        h5_filename = f"{h5_path}{file_name}_{str_img_size}.h5"
+        h5_filename = os.path.join(h5_folder_name, f"{simple_file_name}{str_img_size}.h5")
     
     if not sample:
         with h5py.File(h5_filename,'w') as f:

@@ -6,7 +6,8 @@ results
 data/*
 !data/crops/
 
-tensorboard
+tensorboard/*
+tmp/*
 
 *.sh
 *.out
