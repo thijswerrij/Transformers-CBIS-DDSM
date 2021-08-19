@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Mar 23 15:44:29 2021
-
-@author: thijs
+Run ResNet-18 on CBIS-DDSM data
 """
 import json
 import time
@@ -13,23 +11,12 @@ import torch.utils.tensorboard
 from torchvision.models import resnet18
 import os
 
-#os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-#%% Set seed for experimenting; remove in final code
-
-import random
-import numpy as np
-
-torch.manual_seed(0)
-random.seed(0)
-np.random.seed(0)
 
 #%% Custom dataset (CBIS-DDSM)
 
 from torch.utils.data import DataLoader
-from ResViT_train import CBISDataset
+from cbis_ddsm_train import CBISDataset
 
 #%% Transform
 
@@ -53,7 +40,7 @@ transform = {
 #%% Training and evaluation
 
 from args import parser
-from ResViT_train import run, cross_validate, plot
+from cbis_ddsm_train import run, cross_validate, plot
 
 if __name__ == "__main__":
 

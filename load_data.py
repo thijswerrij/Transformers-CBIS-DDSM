@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Dec 22 16:37:56 2020
-
-@author: Thijs Werrij
+Cropping, rescaling and saving of CBIS-DDSM images
 """
 
 import matplotlib.pyplot as plt

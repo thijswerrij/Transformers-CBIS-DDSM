@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Custom version of ResViT to train on CBIS-DDSM
+Code used to train and test on CBIS-DDSM data
 """
-import json
+
 import time
-import PIL
 import torch
 import torchvision
 import torch.utils.tensorboard
@@ -13,13 +12,6 @@ import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import util
-import os
-
-#os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-#import sys
-#sys.path.append('../VisualTransformers')
-from ResViT import ViTResNet, BasicBlock
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -294,7 +286,7 @@ def evaluate(model, data_loader, epoch, loss_history=[], acc_history=[], conf_ma
 
 #%%
 
-from sklearn.model_selection import KFold, GroupKFold
+from sklearn.model_selection import GroupKFold
 
 def run(model, optimizer, train_loader, test_loader, epochs, binary, tensorboard_writer=None):
     train_loss_history, test_loss_history = [], []
@@ -361,90 +353,3 @@ def cross_validate(model, optimizer, train_dataset, test_loader, k_folds, epochs
                 
     if tensorboard_writer:
         tensorboard_writer.close()
-        
-
-#%% Transform
-
-transform = {
-    'train': torchvision.transforms.Compose([
-        torchvision.transforms.ToPILImage(),
-        #torchvision.transforms.CenterCrop((581,315)),
-        torchvision.transforms.RandomHorizontalFlip(),
-        torchvision.transforms.RandomRotation(10, resample=PIL.Image.BILINEAR),
-        #torchvision.transforms.RandomAffine(8, translate=(.15,.15)),
-        torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)), # not necessary with pre-normalized dataset
-     ]),
-    'val': torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        #torchvision.transforms.Normalize((12513.3505859375), (16529.138671875)),
-     ])
-}
-
-#%% Training and evaluation
-
-from args import parser
-
-if __name__ == "__main__":
-
-    parser.add_argument('--out-channels', metavar='N', type=int, default=16,
-                    help='first BasicBlock will output feature map of size N, after that 2*N and finally 4*N')
-    args = parser.parse_args()
-    vargs = vars(args)
-    print(vargs)
-    print()
-    
-    train_dataset = CBISDataset(args.train_data, args.batch_size_train, transform['train'], binary=args.binary_classification, oversample=args.oversample, reorient=args.reorient_train, bp_filter=args.filter)
-    test_dataset = CBISDataset(args.val_data, args.batch_size_val, transform['val'], binary=args.binary_classification, oversample=False, reorient=args.reorient_val, bp_filter=args.filter)
-    
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True, num_workers=args.num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size_val, shuffle=False)
-    
-    #mean, std = get_mean_std(train_loader)
-    #print(f"Mean {mean}, std {std}")
-    
-    #%%
-    
-    categories = 2 if args.binary_classification else 3
-    batch_size = (args.batch_size_train, args.batch_size_val)
-    
-    # List of arguments
-    num_tokens = args.num_tokens    # number of tokens used in transformer step
-    depth = args.transform_depth    # number of transformer layers
-    
-    model = ViTResNet(BasicBlock, [3, 3, 3], in_channels=1, out_channels=args.out_channels, num_classes=categories, dim=args.dim, num_tokens=num_tokens, depth=depth, batch_size=batch_size).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    
-    #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=.9,weight_decay=1e-4)
-    #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=[35,48],gamma = 0.1)
-    
-    if args.tensorboard_dir:
-        tensorboard_writer = torch.utils.tensorboard.SummaryWriter(args.tensorboard_dir)
-        tensorboard_writer.add_text('args', json.dumps(vars(args)))
-        tensorboard_writer.add_text('transform', str(transform))
-    else:
-        tensorboard_writer = None
-    
-    init_time = time.time()
-    if args.cross_val < 1:
-        run(model, optimizer, train_loader, test_loader, args.epochs, args.binary_classification, tensorboard_writer)
-    else:
-        cross_validate(model, optimizer, train_dataset, test_loader, args.cross_val, args.epochs, transform, args.binary_classification, tensorboard_writer)
-        
-    minutes, seconds = divmod(time.time() - init_time, 60)
-    print('Total execution time:', '{:.0f}m {:.1f}s'.format(minutes, seconds))
-    
-#%% Save model
-
-    if type(args.model) is str:
-        
-        if not os.path.exists(args.model):
-            os.makedirs(args.model)
-        
-        torch.save(model.state_dict(), f"{args.model}/model.pt")
-
-# =============================================================================
-# model = ViT()
-# model.load_state_dict(torch.load(PATH))
-# model.eval()            
-# =============================================================================

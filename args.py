@@ -8,8 +8,8 @@ parser.add_argument('--train-data', metavar='HDF5', #required=True, # temporary 
                     help='training samples (HDF5)')
 parser.add_argument('--val-data', metavar='HDF5', #required=True,
                     default="data/mass_case_description_test_set_scaled_0.1_normalized_cropped.h5",
-                    help='validation samples (HDF5)')
-parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=300)
+                    help='test samples (HDF5)')
+parser.add_argument('--epochs', metavar='EPOCHS', type=int, default=100)
 parser.add_argument('--learning-rate', metavar='LR', type=float, default=0.0003)
 parser.add_argument('--batch-size-train', metavar='N', type=int, default=10,
                     help='batch size for training')
