@@ -17,12 +17,7 @@ import h5py
 from tqdm import tqdm, trange
 from time import sleep
 
-import sys
-sys.path.append('../breast_cancer_classifier')
-from src.cropping.crop_mammogram import crop_img_from_largest_connected, image_orientation
-
-#fpath = get_testdata_file()
-#ds = dcmread("1-1.dcm")
+from crop_mammogram import crop_img_from_largest_connected, image_orientation
 
 #%%
 
